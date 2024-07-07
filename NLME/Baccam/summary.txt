@@ -1,0 +1,120 @@
+********************************************************************************
+*                          Baccam_Healed_Data.mlxtran                          *
+*                          May 29, 2024 at 18:30:34                            *
+*                          Monolix version : 2023R1                            *
+********************************************************************************
+
+
+ESTIMATION OF THE POPULATION PARAMETERS ________________________________________
+
+Fixed Effects ----------------------------     se_sa    rse(%)
+beta_pop    :                     3.39e-06  3.65e-06       108
+k_pop       :                            4                    
+delta_pop   :                         20.1      13.3      66.4
+p_pop       :                         1.33      1.36       102
+c_pop       :                         4.28      1.44      33.5
+
+Standard Deviation of the Random Effects -
+omega_beta  :                         3.41       0.8      23.5
+omega_delta :                        0.917     0.585      63.7
+omega_p     :                         2.47     0.752      30.5
+omega_c     :                         1.03     0.283      27.5
+
+Error Model Parameters -------------------
+a1          :                     2.22e-16       nan       nan
+b1          :                        0.971     0.277      28.5
+c1          :                        0.996    0.0239       2.4
+
+Elapsed time (seconds):    4e+03
+Exploratory phase iterations:   100000 (Fixed number of iterations)
+Smoothing phase iterations:        200 (Stopped at the maximum number of iterations)
+
+ _______________________________________________________________________________
+
+
+
+ESTIMATION OF THE INDIVIDUAL PARAMETERS ________________________________________
+
+
+Estimation of the individual parameters by Conditional Distribution ------------
+              min        Q1    median        Q3       max
+beta  :  3.94e-08  3.78e-07  2.16e-06  0.000102   0.00839
+k     :         4         4         4         4         4
+delta :      14.2      20.9      29.8      35.9      55.7
+p     :     0.227     0.367      2.27      11.6      98.5
+c     :     0.786      3.24      6.67      7.92      20.3
+
+Elapsed time (seconds):       14
+Iterations:      548 (Autostop)
+
+ -------------------------------------------------------------------------------
+
+
+Estimation of the individual parameters by Conditional Mode --------------------
+              min        Q1    median        Q3       max
+beta  :  2.84e-08  2.19e-07  1.81e-06  5.54e-05   0.00223
+k     :         4         4         4         4         4
+delta :      10.9      16.6      25.7      30.3      45.6
+p     :    0.0889     0.164      1.46      8.01      54.9
+c     :     0.718       1.9      5.28      7.28      15.1
+
+Elapsed time (seconds):     0.15
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+ESTIMATION OF THE FISHER INFORMATION MATRIX ____________________________________
+
+
+Estimation of the Fisher information matrix by Stochastic Approximation --------
+
+Correlation Matrix :
+   beta_pop         1
+  delta_pop  -0.38762         1
+      p_pop  -0.38059   0.64783         1
+      c_pop-0.0026648  -0.19165 -0.033147         1
+ omega_beta   0.29294  -0.41766   -0.3853 0.0023244         1
+omega_delta   0.37355  -0.59265  -0.53321   0.21899   0.38735         1
+    omega_p   0.38887  -0.61726  -0.55928  0.071691   0.42625   0.59242         1
+    omega_c   0.13168  -0.25473   -0.1646    0.2383  0.096682   0.21723   0.22096         1
+         a1       nan       nan       nan       nan       nan       nan       nan       nan       nan
+         b1 -0.084794   0.13229   0.11258  0.010556 -0.091615  -0.10741  -0.14344 -0.088497       nan         1
+         c1   0.06682 -0.097532  -0.08551  0.019617  0.058121  0.090075  0.096922  0.062623       nan  -0.89925         1
+
+WARNING : Impossible to compute the eigen values of the correlation matrix.
+
+Elapsed time (seconds):      5.8
+Iterations:      200 (Stopped at the maximum number of iterations/Fisher matrix was not correctly estimated)
+
+ -------------------------------------------------------------------------------
+
+ _______________________________________________________________________________
+
+
+
+ESTIMATION OF THE LOG-LIKELIHOOD _______________________________________________
+
+                                                            (is)
+-2 x log-likelihood                       (OFV) :        1188.47
+Akaike Information Criteria               (AIC) :        1210.47
+Corrected Bayesian Information Criteria  (BICc) :        1232.12
+Bayesian Information Criteria             (BIC) :        1217.50
+
+Elapsed time                          (seconds) :           5.78
+CPU time                              (seconds) :           5.00
+MonteCarlo size (is):    10000 (Fixed number of iterations)
+
+
+[Importance Sampling] Standard error        : 0.799
+                      Sampling distribution : T-distribution with 5 degrees of freedom
+
+ _______________________________________________________________________________
+
+DATASET INFORMATION
+Number of individuals: 14
+Number of observations (1): 113
+Number of doses: 0
+

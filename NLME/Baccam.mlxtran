@@ -1,0 +1,73 @@
+<DATAFILE>
+
+[FILEINFO]
+file='Rahil_Best_Virus.csv'
+delimiter = comma
+header={ID, TIME, Yraw, Y, Ylog, YID, CENS, LIMIT, EB, beta, delta, p, c, EMPTY, EMPTY_, EMPTY__}
+
+[CONTENT]
+ID = {use=identifier}
+TIME = {use=time}
+Y = {use=observation, yname={'1', '2'}, type={continuous, continuous}}
+YID = {use=observationtype}
+CENS = {use=censored}
+
+[SETTINGS]
+dataType = {'1'=plasma, '2'=plasma}
+
+[FILTER]
+Rahil_Best_Virus_filtered = {origin='Rahil_Best_Virus.csv', filter={{removeLines={'YID==2', 'TIME>8'}}}}
+
+[APPLICATION]
+computation=Rahil_Best_Virus_filtered
+
+<MODEL>
+
+[INDIVIDUAL]
+input = {beta_pop, omega_beta, c_pop, omega_c, delta_pop, omega_delta, k_pop, p_pop, omega_p}
+
+DEFINITION:
+beta = {distribution=logNormal, typical=beta_pop, sd=omega_beta}
+c = {distribution=logNormal, typical=c_pop, sd=omega_c}
+delta = {distribution=logNormal, typical=delta_pop, sd=omega_delta}
+k = {distribution=logNormal, typical=k_pop, no-variability}
+p = {distribution=logNormal, typical=p_pop, sd=omega_p}
+
+[LONGITUDINAL]
+input = {a1, b1}
+
+file = 'viralonly.txt'
+
+DEFINITION:
+y1 = {distribution=normal, prediction=V, errorModel=combined1(a1, b1)}
+
+<FIT>
+data = '1'
+model = y1
+
+<PARAMETER>
+a1 = {value=1, method=MLE}
+b1 = {value=0.3, method=MLE}
+beta_pop = {value=0.00000814, method=MLE}
+c_pop = {value=4.54, method=MLE}
+delta_pop = {value=11.71, method=MLE}
+k_pop = {value=4, method=FIXED}
+omega_beta = {value=1, method=MLE}
+omega_c = {value=1, method=MLE}
+omega_delta = {value=1, method=MLE}
+omega_p = {value=1, method=MLE}
+p_pop = {value=0.78, method=MLE}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(method = {conditionalMean, conditionalMode })
+fim(method = StochasticApproximation)
+logLikelihood(method = ImportanceSampling)
+plotResult(method = {indfits, parameterdistribution, covariancemodeldiagnosis, covariatemodeldiagnosis, obspred, vpc, residualsscatter, residualsdistribution, randomeffects, saemresults })
+
+[SETTINGS]
+GLOBAL:
+exportpath = 'Baccam'
+

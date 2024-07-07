@@ -1,0 +1,47 @@
+DESCRIPTION:
+[LONGITUDINAL]
+input = {beta, k, delta, delta_E, p, c, Kd, xi, K_Ef, eta, tau_E, d_E, EB}
+beta = {use = regressor}
+delta = {use = regressor}
+p = {use = regressor}
+c = {use = regressor}
+EB = {use = regressor}
+
+EQUATION:
+odeType=stiff
+; Initial conditions
+t0 = 0
+T_0 = 4E8
+I1_0 = 75
+I2_0 = 0
+V_0 = 0
+E_0 = 0
+
+;Wrap states for negative values
+;T = max(T,0)
+;I1 = max(I1,0)
+;I2 = max(I2,0)
+;V = max(V,0)
+;E = max(E,0)
+
+; Define the delay differential equations
+ddt_T = -beta*T*V
+;ddt_T = -T*V
+ddt_I1 = beta*T*V - k*I1
+;ddt_I1 = T*V - I1
+ddt_I2 = k*I1 - delta*I2 - 0*delta_E*E*I2/(Kd + I2)
+;ddt_I2 = I1 - I2
+ddt_V = p*I2 - c*V
+;ddt_V = I2 - V
+ddt_E = eta*delay(I2, tau_E) - d_E*E
+;ddt_E = eta*I2 - d_E*E
+;ddt_E = I2 - E
+
+;Measured viral load is log10(copies/mL)
+;LV = log10(max(V,1))
+;Measured T cells are Effector + Background
+ETot = max(E , 0) + EB
+;ETot = EB
+
+OUTPUT:
+output = {V, ETot}

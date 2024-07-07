@@ -1,0 +1,31 @@
+Cytokine,Cohort FLU09,Cohort Hopkins,Cohort Taiwan
+GCSF.N,M>F (p<0.03),F>M (p<0.03),=
+GCSF.P,=,=,=
+GM-CSF.N,M>F (p<0.03),=,
+GM-CSF.P,=,F>M (p<0.01),
+IFNα2.N,=,=,
+IFNα2.P,=,=,
+IFNγ.N,M>F (p<0.01),=,
+IFNγ.P,=,=,
+IL10.N,M>F (p<0.05),F>M (p<0.00),=
+IL10.P,M>F (p<0.03),=,F>M (p<0.03)
+IL1β.N,M>F (p<0.03),=,
+IL1β.P,=,=,
+IL6.N,M>F (p<0.01),F>M (p<0.03),=
+IL6.P,=,=,=
+MCP1.N,=,F>M (p<0.01),=
+MCP1.P,=,=,=
+MCP3.N,=,F>M (p<0.01),=
+MCP3.P,=,=,=
+MDC.N,M>F (p<0.04),=,=
+MDC.P,=,=,=
+MIP1α.N,M>F (p<0.00),=,
+MIP1α.P,=,=,
+MIP1β.N,M>F (p<0.00),=,
+MIP1β.P,=,=,
+TGFα.N,=,=,
+TGFα.P,=,=,
+TNFα.N,M>F (p<0.03),=,
+TNFα.P,=,=,
+TNFβ.N,M>F (p<0.05),=,
+TNFβ.P,=,=,

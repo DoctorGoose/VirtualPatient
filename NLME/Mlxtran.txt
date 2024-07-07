@@ -1,0 +1,21 @@
+[LONGITUDINAL]
+input = {beta, k, delta, delta_E, Kd, p, c, xi, K_Ef, eta, tau_E, d_E, T0, I10, I20, V0, E0}
+
+EQUATION:
+; Define the delay differential equations
+d/dt(T) = -beta*T*V
+d/dt(I1) = beta*T*V - k*I1
+d/dt(I2) = k*I1 - delta*I2 - delta_E*E*I2/(Kd + I2)
+d/dt(V) = p*I2 - c*V
+d/dt(E) = xi*I2/(K_Ef + E) + eta*E*I2_delayed - d_E*E
+
+; Handling the delayed term
+I2_delayed = delay(I2, tau_E)
+
+DEFINITION:
+T = {init = T0, ode = d/dt(T)}
+I1 = {init = I10, ode = d/dt(I1)}
+I2 = {init = I20, ode = d/dt(I2)}
+V = {init = V0, ode = d/dt(V)}
+E = {init = E0, ode = d/dt(E)}
+

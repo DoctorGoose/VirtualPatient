@@ -1,0 +1,12 @@
+beta_pop,1,-0.140819,nan,-0.919186,-0.973683,0.840056,nan,nan,0.966976,0.989377,nan,-0.44531
+k_pop,-0.140819,1,nan,-0.170443,0.00775208,-0.0587468,nan,nan,-0.029524,-0.0884778,nan,-0.0450743
+delta_pop,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+p_pop,-0.919186,-0.170443,nan,1,0.95973,-0.82239,nan,nan,-0.941079,-0.939019,nan,0.406893
+c_pop,-0.973683,0.00775208,nan,0.95973,1,-0.855046,nan,nan,-0.98903,-0.989975,nan,0.474103
+omega_beta,0.840056,-0.0587468,nan,-0.82239,-0.855046,1,nan,nan,0.857288,0.858884,nan,-0.382152
+omega_k,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+omega_delta,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+omega_p,0.966976,-0.029524,nan,-0.941079,-0.98903,0.857288,nan,nan,1,0.982386,nan,-0.469236
+omega_c,0.989377,-0.0884778,nan,-0.939019,-0.989975,0.858884,nan,nan,0.982386,1,nan,-0.466734
+a,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+b,-0.44531,-0.0450743,nan,0.406893,0.474103,-0.382152,nan,nan,-0.469236,-0.466734,nan,1

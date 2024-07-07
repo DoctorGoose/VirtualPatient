@@ -1,0 +1,87 @@
+<DATAFILE>
+
+[FILEINFO]
+file='Rahil_Best_Virus.csv'
+delimiter = comma
+header={ID, TIME, Yraw, Y, Ylog, YID, CENS, LIMIT, EB, beta, delta, p, c, EMPTY, EMPTY_, EMPTY__, EMPTY___, EMPTY____, EMPTY_____, EMPTY______, EMPTY_______}
+
+[CONTENT]
+ID = {use=identifier}
+TIME = {use=time}
+Y = {use=observation, yname={'1', '2'}, type={continuous, continuous}}
+YID = {use=observationtype}
+CENS = {use=censored}
+EB = {use=regressor}
+beta = {use=regressor}
+delta = {use=regressor}
+p = {use=regressor}
+c = {use=regressor}
+
+[SETTINGS]
+dataType = {'1'=plasma, '2'=plasma}
+
+[FILTER]
+Rahil_Best_Virus_filtered = {origin='Rahil_Best_Virus.csv', filter={{removeIds={'ID==103', 'ID==108', 'ID==110', 'ID==112', 'ID==201', 'ID==204', 'ID==301', 'ID==307', 'ID==308', 'ID==107'}, removeLines='TIME>12'}}}
+
+[APPLICATION]
+computation=Rahil_Best_Virus_filtered
+
+<MODEL>
+
+[INDIVIDUAL]
+input = {k_pop, K_Ef_pop, Kd_pop, d_E_pop, delta_E_pop, eta_pop, tau_E_pop, xi_pop, omega_tau_E, omega_eta, omega_d_E}
+
+DEFINITION:
+k = {distribution=logNormal, typical=k_pop, no-variability}
+K_Ef = {distribution=logNormal, typical=K_Ef_pop, no-variability}
+Kd = {distribution=logNormal, typical=Kd_pop, no-variability}
+d_E = {distribution=logNormal, typical=d_E_pop, sd=omega_d_E}
+delta_E = {distribution=logNormal, typical=delta_E_pop, no-variability}
+eta = {distribution=logNormal, typical=eta_pop, sd=omega_eta}
+tau_E = {distribution=logNormal, typical=tau_E_pop, sd=omega_tau_E}
+xi = {distribution=logNormal, typical=xi_pop, no-variability}
+
+[LONGITUDINAL]
+input = {b1, a2, b2}
+
+file = 'Myers_Model.txt'
+
+DEFINITION:
+y1 = {distribution=normal, prediction=V, errorModel=proportional(b1)}
+y2 = {distribution=normal, prediction=ETot, errorModel=combined1(a2, b2)}
+
+<FIT>
+data = {'1', '2'}
+model = {y1, y2}
+
+<PARAMETER>
+K_Ef_pop = {value=805700, method=FIXED}
+Kd_pop = {value=434, method=FIXED}
+a2 = {value=1, method=MLE}
+b1 = {value=0.8123922, method=FIXED}
+b2 = {value=0.3, method=MLE}
+c1 = {value=1, method=FIXED}
+c2 = {value=1, method=FIXED}
+d_E_pop = {value=1.006, method=FIXED}
+delta_E_pop = {value=40, method=FIXED}
+eta_pop = {value=0.075, method=MLE}
+k_pop = {value=4, method=FIXED}
+omega_d_E = {value=1, method=MLE}
+omega_eta = {value=1, method=MLE}
+omega_tau_E = {value=1, method=MLE}
+tau_E_pop = {value=2, method=FIXED}
+xi_pop = {value=655, method=FIXED}
+
+<MONOLIX>
+
+[TASKS]
+populationParameters()
+individualParameters(method = {conditionalMean, conditionalMode })
+fim(method = StochasticApproximation)
+logLikelihood(method = ImportanceSampling)
+plotResult(method = {indfits, parameterdistribution, covariancemodeldiagnosis, covariatemodeldiagnosis, obspred, vpc, residualsscatter, residualsdistribution, randomeffects, saemresults })
+
+[SETTINGS]
+GLOBAL:
+exportpath = 'Baccam'
+
