@@ -1,0 +1,8 @@
+Processing Combination 40: Parameters set to 'fit' -> ('tau', 'delta_E', 'K_delta_E')
+Parameter tau fit to 1.1693394370202297 for patient 311
+Parameter delta_E fit to 10.452825002354977 for patient 311
+Parameter K_delta_E fit to 54381.96431243094 for patient 311
+SSE Statewise:
+V: 0.64475306
+CD8TE: 0.47167928
+Slope: 2.284079952580631
