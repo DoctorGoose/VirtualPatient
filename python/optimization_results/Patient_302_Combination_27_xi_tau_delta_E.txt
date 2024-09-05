@@ -1,8 +1,8 @@
 Processing Combination 27: Parameters set to 'fit' -> ('xi', 'tau', 'delta_E')
-Parameter xi fit to 0.12581512181547794 for patient 302
-Parameter tau fit to 0.5479532560921503 for patient 302
-Parameter delta_E fit to 0.5751149941239717 for patient 302
+Parameter xi fit to 0.12872491507194894 for patient 302
+Parameter tau fit to 0.5677310375324398 for patient 302
+Parameter delta_E fit to 0.4510440177468169 for patient 302
 SSE Statewise:
-V: 0.56332185
-CD8TE: 0.12162645
-Slope: 0.591533279641764
+V: 0.82819147
+CD8TE: 0.10816672
+Slope: 0.7249087072167663

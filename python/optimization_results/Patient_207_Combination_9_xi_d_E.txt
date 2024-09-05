@@ -1,7 +1,7 @@
 Processing Combination 9: Parameters set to 'fit' -> ('xi', 'd_E')
-Parameter xi fit to 25.581313610199242 for patient 207
-Parameter d_E fit to 95.20784379763555 for patient 207
+Parameter xi fit to 0.9941322059615132 for patient 207
+Parameter d_E fit to 2.7279627630572634 for patient 207
 SSE Statewise:
-V: 8.91434432
-CD8TE: 0.11374266
-Slope: 0.8087147949255136
+V: 8.45573588
+CD8TE: 0.05258347
+Slope: 0.6296823162038218

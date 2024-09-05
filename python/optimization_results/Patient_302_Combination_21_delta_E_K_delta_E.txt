@@ -1,7 +1,7 @@
 Processing Combination 21: Parameters set to 'fit' -> ('delta_E', 'K_delta_E')
-Parameter delta_E fit to 4.5699159513982295 for patient 302
-Parameter K_delta_E fit to 117090.41860266129 for patient 302
+Parameter delta_E fit to 6.350011863718244 for patient 302
+Parameter K_delta_E fit to 391769.4934768369 for patient 302
 SSE Statewise:
-V: 0.53841662
-CD8TE: 1.04743175
-Slope: 1.960884130905297
+V: 0.80113833
+CD8TE: 1.08786274
+Slope: 2.0453415613027577

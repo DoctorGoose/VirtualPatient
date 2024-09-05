@@ -1,0 +1,10 @@
+Processing Combination 62: Parameters set to 'fit' -> ('a', 'tau', 'd_E', 'delta_E', 'K_delta_E')
+Parameter a fit to 9.996305793322886 for patient 302
+Parameter tau fit to 0.8923247443122524 for patient 302
+Parameter d_E fit to 20.033121656317938 for patient 302
+Parameter delta_E fit to 0.8297997166010447 for patient 302
+Parameter K_delta_E fit to 141676.46570049349 for patient 302
+SSE Statewise:
+V: 0.79084879
+CD8TE: 0.06688877
+Slope: 0.4489579583901145
