@@ -1,0 +1,9 @@
+Processing Combination 47: Parameters set to 'fit' -> ('xi', 'a', 'delta_E', 'K_delta_E')
+Parameter xi fit to 0.13180399373512763 for patient 111
+Parameter a fit to 0.38473703625890465 for patient 111
+Parameter delta_E fit to 4.4714954799325 for patient 111
+Parameter K_delta_E fit to 1989.5702275196672 for patient 111
+SSE Statewise:
+V: 2.78274276
+CD8TE: 0.18725604
+Slope: 0.8714787742190154

@@ -1,0 +1,9 @@
+Processing Combination 43: Parameters set to 'fit' -> ('xi', 'a', 'tau', 'delta_E')
+Parameter xi fit to 0.9402665083363386 for patient 111
+Parameter a fit to 1.8277659796372623 for patient 111
+Parameter tau fit to 4.607638368416863 for patient 111
+Parameter delta_E fit to 2.9158604305598033 for patient 111
+SSE Statewise:
+V: 2.65432729
+CD8TE: 0.11059473
+Slope: 0.7035743170394531
