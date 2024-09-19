@@ -1,7 +1,4 @@
 using DifferentialEquations
-using Distributed
-using Random
-using BenchmarkTools
 
 @everywhere using DifferentialEquations
 
