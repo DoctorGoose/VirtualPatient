@@ -40,6 +40,6 @@ end
 # Function to solve the model and return time points and solution values
 function solve_LCTModel(tspan, y0, params)
     prob = ODEProblem(LCTModel!, y0, tspan, params)
-    sol = solve(prob, AutoVern7(Rodas5()), reltol=1e-5, abstol=1e-6)
+    sol = solve(prob, TRBDF2(autodiff=true), reltol=1e-5, abstol=1e-6)
     return (sol.t, hcat(sol.u...))  # return (time, solution matrix)
 end
