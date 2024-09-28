@@ -20,6 +20,9 @@ end
 @everywhere using Logging
 @everywhere using Profile
 @everywhere using SparseArrays
+@everywhere using Sundials
+@everywhere using OrdinaryDiffEq
+#@everywhere using StaticArrays
 
 println("Number of BLAS threads: ", BLAS.get_num_threads())
 println("Number of processes: ", procs)
@@ -34,6 +37,8 @@ end
 
 @everywhere function LCTModel!(du, u, p, t)
     @inbounds begin
+        #u = @SVector u #A lot to implement, uncertain gains
+        #du = @MVector du
         # Unpack states
         T, I1, I2, V, E, El = u[1:6]
         z = u[7:end]
@@ -62,17 +67,23 @@ end
 end
 
 @everywhere function solve_LCTModel(tspan, y0, params)
-    prob = ODEProblem(LCTModel!, y0, tspan, params)
-    sol = suppress_warnings(() -> solve(
-        prob,
-        TRBDF2(autodiff = true),
-        reltol = 1e-7,             # Relative tolerance
-        abstol = 1e-4,             # Absolute tolerance
-        #dtmin = 1e-6,              # Minimum timestep
-        save_everystep = true,     # Save at every integration step
-        save_start = true,         # Save initial condition
-        save_end = true            # Save final condition
-    ))
+
+    y0_float64 = Float64.(collect(y0))
+    params_float64 = Float64.(params)
+    tspan_float64 = Float64.(tspan)
+    solver = CVODE_BDF(
+        method = :Newton,
+        linear_solver = :GMRES,
+        # krylov_dim = 5,            
+        # max_nonlinear_iters = 3,   
+        # max_convergence_failures = 10,
+    )
+    prob = ODEProblem(LCTModel!, y0_float64, tspan_float64, params_float64)
+    sol = suppress_warnings(() ->solve(prob, solver; reltol=1e-5, abstol=1e-4))
+
+
+    #prob = ODEProblem(LCTModel!, y0, tspan, params)
+    #sol = suppress_warnings(() -> solve(prob, Rodas5(), reltol = 1e-7, abstol = 1e-4)) #TRBDF2(), Rodas5() autodiff = true
     return sol
 end
 
