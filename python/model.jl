@@ -1,40 +1,31 @@
-
-# Define a threshold function for states
-function apply_state_threshold!(u, threshold)
-    for i in eachindex(u)
-        if abs(u[i]) < threshold
-            u[i] = 0.0
-        end
-    end
-end
-
 # ODE model definition with threshold application on states before usage
 function LCTModel!(du, u, p, t)
-    # Apply state threshold to prevent small floating-point errors in states before use
-    state_threshold = 1e-8  # You can adjust this based on your system's needs
-    apply_state_threshold!(u, state_threshold)
+    @inbounds begin
+        # Unpack states
+        T = u[1]; I1 = u[2]; I2 = u[3]; V = u[4]; E = u[5]; El = u[6]
+        z = u[7:end]
 
-    T, I1, I2, V, E, El = u[1], u[2], u[3], u[4], u[5], u[6]
-    z = u[7:end]
+        # Unpack parameters
+        beta = p[1]; k = p[2]; delta = p[3]; delta_E = p[4]; K_delta_E = p[5]
+        p_param = p[6]; c = p[7]; xi = p[8]; tau = p[9]; a = p[10]; d_E = p[11]
 
-    beta, k, delta, delta_E, K_delta_E, p_param, c, xi, tau, a, d_E = p
+        # Precompute constants
+        tau_inv = 1 / tau
+        xi_tau_inv = xi * tau_inv
+        delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
 
-    # ODEs
-    du[1] = -beta * T * V  # dT_dt
-    du[2] = beta * T * V - k * I1  # dI1_dt
-    du[3] = k * I1 - delta * I2 - (delta_E * E * I2) / (K_delta_E + I2)  # dI2_dt
-    du[4] = p_param * I2 - c * V  # dV_dt
-    du[5] = (xi / tau) * z[end] - d_E * E  # dE_dt
-    du[6] = d_E * E # Lung T cells
+        # ODEs
+        du[1] = -beta * T * V
+        du[2] = beta * T * V - k * I1
+        du[3] = k * I1 - delta * I2 - delta_E_term
+        du[4] = p_param * I2 - c * V
+        du[5] = xi_tau_inv * z[end] - d_E * E
+        du[6] = d_E * E  # Lung T cells
 
-    # Delayed variables
-    stages = length(z)
-    dz_dt = zeros(eltype(u), stages)
-    dz_dt[1] = (1 / tau) * (a * I2 - z[1])
-    for i in 2:stages
-        dz_dt[i] = (1 / tau) * (z[i - 1] - z[i])
+        # Delayed variables
+        du[7] = tau_inv * (a * I2 - z[1])  # dz_dt[1]
+        du[8:end] .= tau_inv .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
     end
-    du[7:end] .= dz_dt
 end
 
 # Function to solve the model and return time points and solution values

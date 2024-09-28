@@ -1,223 +1,209 @@
-
-using DifferentialEquations
 using Distributed
-using Random
-using BenchmarkTools
+using LinearAlgebra
 
+blas_threads = 1
+procs = 1
+
+BLAS.set_num_threads(blas_threads)
+
+if nprocs() > procs
+    rmprocs(workers())
+    addprocs(procs - 1) 
+elseif nprocs() < procs
+    addprocs(procs - nprocs())
+end
+
+@everywhere using LinearAlgebra
+@everywhere using Random
+@everywhere using Statistics
 @everywhere using DifferentialEquations
+@everywhere using Logging
+@everywhere using Profile
+@everywhere using SparseArrays
 
-# ODE model 
+println("Number of BLAS threads: ", BLAS.get_num_threads())
+println("Number of processes: ", procs)
+println("Number of threads: ", Threads.nthreads())
+
+@everywhere function suppress_warnings(f)
+    logger = ConsoleLogger(stderr, Logging.Error)  # Only show errors and above
+    return with_logger(logger) do
+        f()
+    end
+end
+
 @everywhere function LCTModel!(du, u, p, t)
-    # Apply state threshold to prevent small floating-point errors in states
-    state_threshold = 1e-8
-    @inbounds for i in eachindex(u)
-        u[i] = abs(u[i]) < state_threshold ? 0.0 : u[i]
-    end
-
-    # Extract parameters
-    T, I1, I2, V, E, El = u[1], u[2], u[3], u[4], u[5], u[6]
-    z = @view u[7:end]  # Use view to avoid copying the array
-
-    beta, k, delta, delta_E, K_delta_E, p_param, c, xi, tau, a, d_E = p
-
-    # ODEs 
-    du[1] = -beta * T * V               # dT_dt
-    du[2] = beta * T * V - k * I1        # dI1_dt
-    du[3] = k * I1 - delta * I2 - (delta_E * E * I2) / (K_delta_E + I2)  # dI2_dt
-    du[4] = p_param * I2 - c * V         # dV_dt
-    du[5] = (xi / tau) * z[end] - d_E * E # dE_dt
-    du[6] = d_E * E                      # Lung T cells
-
-    # Delayed variables 
-    stages = length(z)
     @inbounds begin
-        du[7] = (1 / tau) * (a * I2 - z[1])  # First delayed stage
-        for i in 2:stages
-            du[i + 6] = (1 / tau) * (z[i - 1] - z[i])  # Updating du[7:end]
-        end
+        # Unpack states
+        T, I1, I2, V, E, El = u[1:6]
+        z = u[7:end]
+
+        # Unpack parameters
+        beta, k, delta, delta_E, K_delta_E, p_param, c, xi, tau, a, d_E = p
+
+        # Precompute constants
+        tau_inv = Float32(1.0) / tau
+        xi_tau_inv = xi * tau_inv
+        delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
+
+        # ODEs
+        du[1] = -beta * T * V
+        du[2] = beta * T * V - k * I1
+        du[3] = k * I1 - delta * I2 - delta_E_term
+        du[4] = p_param * I2 - c * V
+        du[5] = xi_tau_inv * z[end] - d_E * E
+        du[6] = d_E * E  # Lung T cells
+
+        # Delayed variables
+        du[7] = tau_inv * (a * I2 - z[1])  # dz_dt[1]
+        du[8:end] .= tau_inv .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
     end
+    return nothing
 end
 
-# Function to solve the model and return time points and solution values
-@everywhere function solve_LCTModel(tspan, y0, params, t_fill)
-    println("Solving for tspan: ", tspan)
-    println("Additional time points (t_fill): ", t_fill)
-
-    # Define the problem
+@everywhere function solve_LCTModel(tspan, y0, params)
     prob = ODEProblem(LCTModel!, y0, tspan, params)
-
-    # Solve the problem with the given settings
-    sol = solve(prob, TRBDF2(autodiff=true), reltol=1e-5, abstol=1e-6, saveat=t_fill)
-
-    # Print the evaluated time points from the solver
-    println("Evaluated time points (sol.t): ", sol.t)
-
-    # Return the time points and the solution matrix
-    return (sol.t, hcat(sol.u...))  # return (time, solution matrix)
+    sol = suppress_warnings(() -> solve(
+        prob,
+        TRBDF2(autodiff = true),
+        reltol = 1e-7,             # Relative tolerance
+        abstol = 1e-4,             # Absolute tolerance
+        #dtmin = 1e-6,              # Minimum timestep
+        save_everystep = true,     # Save at every integration step
+        save_start = true,         # Save initial condition
+        save_end = true            # Save final condition
+    ))
+    return sol
 end
 
-# Wrapper function for parallel execution using pmap
-@everywhere function pmap_LCTModel(tspan, y0, params_list, t_fill=[])
-    println("Running pmap_LCTModel with t_fill: ", t_fill)
-
-    if size(params_list, 1) == 1
-        # Single parameter set, solve serially
-        t_values, y_values = solve_LCTModel(tspan, y0, params_list[1, :], t_fill)
-        return (t_values, y_values)
-    else
-        # Multiple parameter sets, solve in parallel
-        solutions = pmap(params -> solve_LCTModel(tspan, y0, params, t_fill), eachrow(params_list))
-
-        # Extract time values and solution matrices from the results
-        t_values_list = [sol[1] for sol in solutions]
-        y_values_list = [sol[2] for sol in solutions]
-
-        # Print the time matrix for debugging
-        println("t_values_list: ", t_values_list)
-
-        return (t_values_list, y_values_list)
-    end
-end
-
-# Define a threshold function for states
-@everywhere function apply_state_threshold!(u, threshold)
-    for i in eachindex(u)
-        if abs(u[i]) < threshold
-            u[i] = 0.0
-        end
-    end
-end
-
-
-### Benchmmarking solvers ###
 # Function to sample parameters uniformly in log space
 @everywhere function sample_parameters(seed, n_samples)
     Random.seed!(seed)
     rng = Random.GLOBAL_RNG
-    xi_range = (1e-2, 1.0)
-    a_range = (1e-1, 1.0)
-    tau_range = (1e-1, 5.0)
-    d_E_range = (0.5, 10.0)
-    delta_E_range = (1e-1, 1e2)
-    K_delta_E_range = (1e2, 1e6)
+    xi_range = (Float32(1e-2), Float32(1.0))
+    a_range = (Float32(1e-1), Float32(1.0))
+    tau_range = (Float32(1e-1), Float32(5.0))
+    d_E_range = (Float32(0.5), Float32(10.0))
+    delta_E_range = (Float32(1e-1), Float32(1e2))
+    K_delta_E_range = (Float32(1e2), Float32(1e6))
 
     param_samples = [(
-        exp(rand(rng) * (log(xi_range[2]) - log(xi_range[1])) + log(xi_range[1])),
-        exp(rand(rng) * (log(a_range[2]) - log(a_range[1])) + log(a_range[1])),
-        exp(rand(rng) * (log(tau_range[2]) - log(tau_range[1])) + log(tau_range[1])),
-        exp(rand(rng) * (log(d_E_range[2]) - log(d_E_range[1])) + log(d_E_range[1])),
-        exp(rand(rng) * (log(delta_E_range[2]) - log(delta_E_range[1])) + log(delta_E_range[1])),
-        exp(rand(rng) * (log(K_delta_E_range[2]) - log(K_delta_E_range[1])) + log(K_delta_E_range[1]))
+        exp(rand(rng, Float32) * (log(xi_range[2]) - log(xi_range[1])) + log(xi_range[1])),
+        exp(rand(rng, Float32) * (log(a_range[2]) - log(a_range[1])) + log(a_range[1])),
+        exp(rand(rng, Float32) * (log(tau_range[2]) - log(tau_range[1])) + log(tau_range[1])),
+        exp(rand(rng, Float32) * (log(d_E_range[2]) - log(d_E_range[1])) + log(d_E_range[1])),
+        exp(rand(rng, Float32) * (log(delta_E_range[2]) - log(delta_E_range[1])) + log(delta_E_range[1])),
+        exp(rand(rng, Float32) * (log(K_delta_E_range[2]) - log(K_delta_E_range[1])) + log(K_delta_E_range[1]))
     ) for _ in 1:n_samples]
     return param_samples
 end
 
-fixed_params = (T0=4e8, I10=75, beta=1.0888e-4, k=4, p=0.02978, c=13.934, delta=0.96, E0=3.47e5)
-
-# Combine fixed parameters with sampled parameters and flatten into a vector
+# Combine fixed parameters with sampled parameters
 @everywhere function create_full_parameter_sets(sampled_params)
-    return [vcat(fixed_params.T0, fixed_params.I10, fixed_params.beta, fixed_params.k, fixed_params.p,
-                 fixed_params.c, fixed_params.delta, xi, tau, a, d_E, delta_E, K_delta_E) 
-            for (xi, a, tau, d_E, delta_E, K_delta_E) in sampled_params]
+    fixed_params = (
+        beta=Float32(1.0888e-4),
+        k=Float32(4.0),
+        delta=Float32(0.96),
+        p=Float32(0.02978),
+        c=Float32(13.934)
+    )
+    return [Float32[
+        fixed_params.beta,
+        fixed_params.k,
+        fixed_params.delta,
+        delta_E,
+        K_delta_E,
+        fixed_params.p,
+        fixed_params.c,
+        xi,
+        tau,
+        a,
+        d_E
+    ] for (xi, a, tau, d_E, delta_E, K_delta_E) in sampled_params]
 end
-
-# List of solvers to test
-solver_methods = [
-    #Tsit5(),             # Non-stiff, explicit Runge-Kutta
-    #Vern7(),             # Non-stiff, 7th order
-    #Rodas5(),            # Stiff, Rosenbrock
-    #AutoVern7(TRBDF2()), # Automatic switching
-    TRBDF2()             # Stiff, Implicit BDF
-]
 
 # Define time span and initial conditions
-tspan = (0.0, 8.0)
-y0 = [4e8, 75.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Initial conditions
+tspan = (Float32(0.0), Float32(8.0))
+y0 = Float32[
+    4e8,  # T
+    75.0, # I1
+    0.0,  # I2
+    0.0,  # V
+    0.0,  # E
+    0.0,  # El
+    0.0,  # z[1]
+    0.0,  # z[2]
+    0.0   # z[3]
+]
 
-using Base: sleep
-
-# Helper function to enforce timeout on long-running operations
-function run_with_timeout(f, timeout_secs)
-    result = nothing
-    timed_out = false
-    
-    t = Timer(timeout_secs) do
-        timed_out = true
-        throw(InterruptException("Execution timed out"))
-    end
-    
-    try
-        result = f()  # Run the provided function
-    catch e
-        if isa(e, InterruptException)
-            println("Function timed out!")
-            result = NaN  # Return NaN if the function times out
-        else
-            rethrow(e)  # Rethrow any other exception
-        end
-    finally
-        close(t)  # Close the timer
-    end
-    
-    return result
+# Function to solve ODEs in serial
+@everywhere function serial_LCTModel(tspan, y0, param_sets)
+    sols = [solve_LCTModel(tspan, y0, params) for params in param_sets]
+    return sols
 end
-using Statistics  # Import for mean and std functions
 
-function test_solvers_on_param_sets(param_sets, solver_methods, tspan, y0)
+@everywhere function pmap_LCTModel(tspan, y0, param_sets)
+    sols = pmap(params -> solve_LCTModel(tspan, y0, params), param_sets)
+    return sols
+end
+
+@everywhere function tmap_LCTModel(tspan, y0, param_sets)
+    sols = Vector{Any}(undef, length(param_sets))
+    Threads.@threads for i in 1:length(param_sets)
+        sols[i] = solve_LCTModel(tspan, y0, param_sets[i])
+    end
+    return sols
+end
+
+@everywhere function test_methods_on_param_sets(param_sets, tspan, y0; profile=true)
+    methods = Dict(
+        :serial => serial_LCTModel,
+        #:pmap   => pmap_LCTModel,
+        :tmap   => tmap_LCTModel
+    )
+
     results = Dict{Symbol, Any}()
-    total_samples = length(param_sets)
-    
-    for solver in solver_methods
-        solver_name = Symbol(solver)  # Convert solver to Symbol for dictionary key
-        println("Testing solver: ", solver_name)
 
-        times = Float64[]
-        
-        for (i, params) in enumerate(param_sets)
-            if i % 25 == 0
-                println("Processing sample $i of $total_samples")
-            end
-            
-            # Wrap the solver and param in a function for use with the timeout
-            solver_func = let solver=solver, params=params  # Capture solver and params
-                () -> begin
-                    time_taken = @elapsed pmap_LCTModel(tspan, y0, [params])
-                    return time_taken
-                end
-            end
+    # Loop through each method
+    for (method_name, method_func) in methods
+        println("Testing method: $method_name")
+        start_time = time()
 
-            # Run the solver function with a timeout of 30 seconds
-            time_taken = run_with_timeout(solver_func, 30)  # Timeout of 30 seconds
-            
-            if isnan(time_taken)
-                println("Sample $i timed out for solver $solver_name")
-            end
-
-            push!(times, time_taken)
+        if profile
+            println("Profiling method: $method_name")
+            Profile.clear()  # Clear previous profiling data
+            @profile sols = method_func(tspan, y0, param_sets)
+        else
+            sols = method_func(tspan, y0, param_sets)
         end
 
-        # Calculate and print the statistics for the solver's times
-        min_time = minimum(times)
-        max_time = maximum(times)
-        mean_time = mean(times)
-        std_time = std(times)
-        
-        println("Solver: $solver_name")
-        println("Min time: $min_time seconds")
-        println("Max time: $max_time seconds")
-        println("Mean time: $mean_time seconds")
-        println("Std time: $std_time seconds")
-        
-        results[solver_name] = times  # Use solver_name (Symbol) as the dictionary key
+        end_time = time()
+        total_time = end_time - start_time
+        avg_time_per_sample = total_time / length(param_sets)
+        avg_num_time_points = mean([length(sol.t) for sol in sols])
+
+        # Store the results in the dictionary
+        results[method_name] = (
+            total_time=total_time,
+            avg_time_per_sample=avg_time_per_sample,
+            avg_num_time_points=avg_num_time_points
+        )
+
+        # Print profiling data summary to console (optional)
+        if profile
+            println("Profiling data for $method_name:")
+            Profile.print()  # Print profiling data summary
+        end
     end
+
     return results
 end
 
-# Generate 100 parameter sets with fixed seed
+# Generate parameter sets
 seed = 12345
-n_samples = 10
+n_samples = 1000  # Number of samples
 sampled_params = sample_parameters(seed, n_samples)
 full_param_sets = create_full_parameter_sets(sampled_params)
 
-# Benchmark different solvers using the pmap_LCTModel function
-solver_results = test_solvers_on_param_sets(full_param_sets, solver_methods, tspan, y0)
+# Run the benchmark
+results = test_methods_on_param_sets(full_param_sets, tspan, y0; profile=false)
