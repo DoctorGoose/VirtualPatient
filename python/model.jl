@@ -11,6 +11,13 @@ using Profile
 using SparseArrays
 using Sundials
 
+function suppress_warnings(f)
+    logger = ConsoleLogger(stderr, Logging.Error)  # Only show errors and above
+    return with_logger(logger) do
+        f()
+    end
+end
+
 function LCTModel!(du, u, p, t)
     @inbounds begin
         # Unpack states
@@ -40,22 +47,41 @@ function LCTModel!(du, u, p, t)
     return nothing
 end
 
-function solve_LCTModel(tspan, y0, params)
-    prob = ODEProblem(LCTModel!, y0, tspan, params)
-    sol = solve(prob, TRBDF2(autodiff=true); reltol=1e-5, abstol=1e-4)
-
-    return (sol.t, hcat(sol.u...))  # return (time, solution matrix)
-end
-
-function serial_LCTModel(tspan, y0, param_sets)
-    sols = [solve_LCTModel(tspan, y0, params) for params in param_sets]
-    return sols
-end
-
 function tmap_LCTModel(tspan, y0, param_sets)
+    # If a single parameter set is passed, wrap it in an array for consistent handling
+    if !isa(param_sets, AbstractVector) || (isa(param_sets, AbstractVector) && !isa(param_sets[1], AbstractVector))
+        param_sets = [param_sets]
+    end
+
     sols = Vector{Any}(undef, length(param_sets))
     Threads.@threads for i in 1:length(param_sets)
         sols[i] = solve_LCTModel(tspan, y0, param_sets[i])
     end
-    return sols
+
+    # Return results: single solution if only one parameter set, otherwise return all solutions
+    return length(sols) == 1 ? sols[1] : sols
 end
+
+function solve_LCTModel(tspan, y0, params)
+    prob = ODEProblem(LCTModel!, y0, tspan, params)
+    sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=true); reltol=1e-3, abstol=1e-2, dtmax=1e-1, dtmin=1e-6))
+
+    return (sol.t, hcat(sol.u...))
+end
+
+function cvode_LCTModel(tspan, y0, params_array)
+
+    solver = CVODE_BDF(
+        method = :Newton,
+        linear_solver = :GMRES,
+        krylov_dim = 10,            
+        max_nonlinear_iters = 10,   
+        max_convergence_failures = 3,
+
+    )
+    prob = ODEProblem(LCTModel!, y0, tspan, params_array)
+    sol = suppress_warnings(() ->solve(prob, solver; reltol=1e-3, abstol=1e-2, dtmax=1e-1, dtmin=1e-8))
+
+    return (sol.t, hcat(sol.u...))
+end
+
