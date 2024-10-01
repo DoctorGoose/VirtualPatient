@@ -1,16 +1,27 @@
-# ODE model definition with threshold application on states before usage
+using Distributed
+using LinearAlgebra
+blas_threads = 1
+BLAS.set_num_threads(blas_threads)
+
+using Random
+using Statistics
+using DifferentialEquations
+using Logging
+using Profile
+using SparseArrays
+using Sundials
+
 function LCTModel!(du, u, p, t)
     @inbounds begin
         # Unpack states
-        T = u[1]; I1 = u[2]; I2 = u[3]; V = u[4]; E = u[5]; El = u[6]
+        T, I1, I2, V, E, El = u[1:6]
         z = u[7:end]
 
         # Unpack parameters
-        beta = p[1]; k = p[2]; delta = p[3]; delta_E = p[4]; K_delta_E = p[5]
-        p_param = p[6]; c = p[7]; xi = p[8]; tau = p[9]; a = p[10]; d_E = p[11]
+        beta, k, delta, delta_E, K_delta_E, p_param, c, xi, tau, a, d_E = p
 
         # Precompute constants
-        tau_inv = 1 / tau
+        tau_inv = 1.0 / tau
         xi_tau_inv = xi * tau_inv
         delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
 
@@ -26,11 +37,25 @@ function LCTModel!(du, u, p, t)
         du[7] = tau_inv * (a * I2 - z[1])  # dz_dt[1]
         du[8:end] .= tau_inv .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
     end
+    return nothing
 end
 
-# Function to solve the model and return time points and solution values
 function solve_LCTModel(tspan, y0, params)
     prob = ODEProblem(LCTModel!, y0, tspan, params)
-    sol = solve(prob, TRBDF2(autodiff=true), reltol=1e-5, abstol=1e-6)
+    sol = solve(prob, TRBDF2(autodiff=true); reltol=1e-5, abstol=1e-4)
+
     return (sol.t, hcat(sol.u...))  # return (time, solution matrix)
+end
+
+function serial_LCTModel(tspan, y0, param_sets)
+    sols = [solve_LCTModel(tspan, y0, params) for params in param_sets]
+    return sols
+end
+
+function tmap_LCTModel(tspan, y0, param_sets)
+    sols = Vector{Any}(undef, length(param_sets))
+    Threads.@threads for i in 1:length(param_sets)
+        sols[i] = solve_LCTModel(tspan, y0, param_sets[i])
+    end
+    return sols
 end
