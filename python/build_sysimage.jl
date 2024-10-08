@@ -1,24 +1,18 @@
 using Pkg
 
 # Create or activate a dedicated environment for the system image
-Pkg.activate("../sysimage_env")  # You can specify any path or name you prefer
-
-# Update all packages first
-Pkg.update()
+Pkg.activate("sysimage_env")  # You can specify any path or name you prefer
 
 # Add the required packages to the environment
 packages_to_add = [
     "DifferentialEquations",
-    "Interpolations",
-    "JSON",
     "PackageCompiler",
-    "Sundials",
-    "SciMLBase",
+    "ThreadsX"
 ]
 
 Pkg.add(packages_to_add)
 
-# Update all packages again
+# Update all packages
 Pkg.update()
 
 # Load/precompile/cache all packages_to_add
@@ -32,10 +26,7 @@ using PackageCompiler
 # List of packages to include in the system image
 packages = [
     "DifferentialEquations",
-    "Interpolations",
-    "JSON",
-    "Sundials",
-    "SciMLBase"
+    "ThreadsX"
 ]
 
 # Create the system image

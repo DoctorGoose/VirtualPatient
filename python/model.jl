@@ -1,16 +1,6 @@
-using Distributed
-using LinearAlgebra
-
-blas_threads = 1
-BLAS.set_num_threads(blas_threads)
-
-using Random
-using Statistics
 using DifferentialEquations
 using Logging
-using Profile
-using SparseArrays
-#using Sundials
+using ThreadsX
 
 function suppress_warnings(f)
     logger = ConsoleLogger(stderr, Logging.Error)  # Only show errors and above
@@ -50,24 +40,16 @@ end
 
 
 function tmap_LCTModel(tspan, y0, param_sets)
-    # If a single parameter set is passed, wrap it in an array for consistent handling
-    if !isa(param_sets, AbstractVector) || (isa(param_sets, AbstractVector) && !isa(param_sets[1], AbstractVector))
-        param_sets = [param_sets]
-    end
-
-    sols = Vector{Any}(undef, length(param_sets))
-    Threads.@threads for i in 1:length(param_sets)
-        sols[i] = solve_LCTModel(tspan, y0, param_sets[i])
-    end
-
-    # Return results: single solution if only one parameter set, otherwise return all solutions
+    param_sets = isa(param_sets, AbstractVector) && isa(param_sets[1], AbstractVector) ? param_sets : [param_sets]
+    sols = ThreadsX.map(params -> solve_LCTModel(tspan, y0, params), param_sets)
     return length(sols) == 1 ? sols[1] : sols
 end
 
 function solve_LCTModel(tspan, y0, params)
     prob = ODEProblem(LCTModel!, y0, tspan, params)
-    sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=true); reltol=1e-3, abstol=1e-2, dtmax=1e-1, dtmin=1e-6))
-
+    isoutofdomain = (u, p, t) -> any(x -> x < -1e-3, u)
+    sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=true); reltol=1e-3, abstol=1e-2, 
+                                         dtmax=1e-1, dtmin=1e-12, isoutofdomain=isoutofdomain))
     return (sol.t, hcat(sol.u...))
 end
 

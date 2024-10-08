@@ -1,0 +1,4 @@
+[deps]
+DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
+PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
