@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 *.db
+python/sql/V_dev4.db-journal
+python/V_dev_summary.xlsx
