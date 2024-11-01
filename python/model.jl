@@ -16,28 +16,31 @@ function LCTModel!(du, u, p, t)
         z = u[7:end]
 
         # Unpack parameters
-        beta, k, delta, delta_E, K_delta_E, p_param, c, xi, tau, a, d_E = p
+        beta, k, delta, delta_E, K_delta_E, p_param, c, xi, a, d_E = p
 
-        # Precompute constants
-        tau_inv = 1.0 / tau
-        xi_tau_inv = xi * tau_inv
-        delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
+        if t < 0
+            # No changes during the negative time
+            du .= 0.0  # Set all derivatives to zero
+        else
+            # Normal ODEs for t >= 0
+            # Precompute constant
+            delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
 
-        # ODEs
-        du[1] = -beta * T * V
-        du[2] = beta * T * V - k * I1
-        du[3] = k * I1 - delta * I2 - delta_E_term
-        du[4] = p_param * I2 - c * V
-        du[5] = xi_tau_inv * z[end] - d_E * E
-        du[6] = d_E * E  # Lung T cells
+            # ODEs
+            du[1] = -beta * T * V
+            du[2] = beta * T * V - k * I1
+            du[3] = k * I1 - delta * I2 - delta_E_term
+            du[4] = p_param * I2 - c * V
+            du[5] = a * z[end] - d_E * E
+            du[6] = d_E * E  # Lung T cells
 
-        # Delayed variables
-        du[7] = tau_inv * (a * I2 - z[1])  # dz_dt[1]
-        du[8:end] .= tau_inv .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
+            # Delayed variables
+            du[7] = xi * I1 - a * z[1]  # dz_dt[1]
+            du[8:end] .= a .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
+        end
     end
     return nothing
 end
-
 
 function tmap_LCTModel(tspan, y0, param_sets)
     param_sets = isa(param_sets, AbstractVector) && isa(param_sets[1], AbstractVector) ? param_sets : [param_sets]
