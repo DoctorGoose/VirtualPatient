@@ -52,7 +52,7 @@ function solve_LCTModel(tspan, y0, params)
     prob = ODEProblem(LCTModel!, y0, tspan, params)
     isoutofdomain = (u, p, t) -> any(x -> x < -1e-3, u)
     sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=true); reltol=1e-4, abstol=1e-3, 
-                                         dtmax=1e-1, dtmin=1e-8, isoutofdomain=isoutofdomain))
+                                         dtmax=1e-1, dtmin=1e-6, isoutofdomain=isoutofdomain))
     return (sol.t, hcat(sol.u...))
 end
 
