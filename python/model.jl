@@ -27,16 +27,16 @@ function LCTModel!(du, u, p, t)
             delta_E_term = delta_E * E * I2 / (K_delta_E + I2)
 
             # ODEs
-            du[1] = -beta * T * V
-            du[2] = beta * T * V - k * I1
-            du[3] = k * I1 - delta * I2 - delta_E_term
-            du[4] = p_param * I2 - c * V
-            du[5] = a * z[end] - d_E * E
-            du[6] = d_E * E  # Lung T cells
+            du[1] = -beta * T * V # Target Cells
+            du[2] = beta * T * V - k * I1 # Eclipse Cells
+            du[3] = k * I1 - delta * I2 - delta_E * E * I2 / (K_delta_E + I2) # Infected Cells
+            du[4] = p_param * I2 - c * V # Virus
+            du[5] = a * z[end] - d_E * E # T Cells
+            du[6] = d_E * E # Exited T Cells (unused)
 
             # Delayed variables
-            du[7] = xi * I1 - a * z[1]  # dz_dt[1]
-            du[8:end] .= a .* (z[1:end-1] .- z[2:end])  # dz_dt[2:end]
+            du[7] = xi * I1 - a * z[1] # First delay compartment
+            du[8:end] .= a .* (z[1:end-1] .- z[2:end]) #nth compartment
         end
     end
     return nothing
