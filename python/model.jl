@@ -32,7 +32,7 @@ function LCTModel!(du, u, p, t)
             du[3] = k * I1 - delta * I2 - delta_E * E * I2 / (K_delta_E + I2) # Infected Cells
             du[4] = p_param * I2 - c * V # Virus
             du[5] = a * z[end] - d_E * E # T Cells
-            du[6] = d_E * E # Exited T Cells (unused)
+            du[6] = d_E * E # Memory T Cells
 
             # Delayed variables
             du[7] = xi * I1 - a * z[1] # First delay compartment
