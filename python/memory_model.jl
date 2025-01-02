@@ -49,7 +49,7 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     z = u[7:end]
 
     # Unpack parameters
-    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, tau_memory = p
+    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, tau_memory = p
 
     # Retrieve delayed state
     CD8_E_tau = interpolate_delay(state_history, 4, t - tau_memory)  # 5th state (CD8_E)
@@ -59,7 +59,8 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     du[2] = beta * T * V - k * I1  # Eclipse Cells
     du[3] = k * I1 - delta * I2 - delta_E * CD8_E * I2 / (K_delta_E + I2)  # Infected Cells
     du[4] = p_param * I2 - c * V  # Virus
-    du[5] = a * z[end] - d_E * CD8_E  # Effector T Cells
+    
+    du[5] = eta * CD8_M * I2 + a * z[end] - d_E * CD8_E  # Effector T Cells
     du[6] = zeta * CD8_E_tau  # Memory T Cells
 
     # Delayed compartments
@@ -85,4 +86,32 @@ function tmap_LCTModel(tspan, y0, param_sets)
     param_sets = isa(param_sets, AbstractVector) && isa(param_sets[1], AbstractVector) ? param_sets : [param_sets]
     sols = ThreadsX.map(params -> solve_LCTModel(tspan, y0, params), param_sets)
     return length(sols) == 1 ? sols[1] : sols
+end
+
+# Reinfection condition: triggers at t == reinfection_time
+function reinfection_condition(u, t, integrator)
+    reinfection_time = 12  
+    return t - reinfection_time
+end
+
+# Reinfection effect: set T and I1 
+function reinfection_effect!(integrator)
+    T0, I10 = 4E7, 75  # re-infection conditions
+    integrator.u[1] = T0  # set T
+    integrator.u[2] = I10  # set I1
+end
+reinfection_callback = DiscreteCallback(reinfection_condition, reinfection_effect!)
+
+# Solve a single T cell model instance with reinfection
+function solve_LCTModel_with_reinfection(tspan, y0, params)
+    state_history = StateHistory(y0)
+    wrapper!(du, u, p, t) = LCTModel!(du, u, p, t, state_history)
+    prob = ODEProblem(wrapper!, y0, tspan, params)
+    isoutofdomain = (u, p, t) -> any(x -> x < -1e-3, u)
+
+    sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff = false); 
+                                        reltol = 1e-4, abstol = 1e-5, dtmax = 1e-1, 
+                                        dtmin = 1e-8, isoutofdomain = isoutofdomain, 
+                                        callback=reinfection_callback))
+    return (sol.t, hcat(sol.u...))
 end
