@@ -47,9 +47,7 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     z = u[7:end]
 
     # Unpack parameters
-    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, tau_memory, reinfection_time = p
-    switch = t < reinfection_time ? 0 : 1
-    inverse_switch = t > reinfection_time ? 0 : 1
+    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, K_I1, tau_memory = p
 
     # Retrieve delayed state
     CD8_E_tau = interpolate_delay(state_history, 4, t - tau_memory)  # 5th state (CD8_E)
@@ -59,40 +57,56 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     du[2] = beta * T * V - k * I1  # Eclipse Cells
     du[3] = k * I1 - delta * I2 - delta_E * CD8_E * I2 / (K_delta_E + I2)  # Infected Cells
     du[4] = p_param * I2 - c * V  # Virus
-    du[5] = switch * eta * CD8_M * I1 + inverse_switch * a * z[end] - d_E * CD8_E  # Effector T Cells
-    du[6] = zeta * CD8_E_tau - switch * eta * CD8_M * I1 #- 0.3 * CD8_M  # Memory T Cells
+    du[5] = a * z[end] + (eta * CD8_M * I1)/(I1 + K_I1) - d_E * CD8_E  # Effector T Cells (+  a * z[end])
+    du[6] = zeta * CD8_E_tau #- eta * CD8_M * I1  # Memory T Cells
 
     # Delayed compartments
     du[7] = xi * I1 - a * z[1]
     du[8:end] .= a .* (z[1:end-1] .- z[2:end])
 end
 
-# Reinfection condition: triggers when t crosses reinfection_time
-function reinfection_condition(u, t, integrator, reinfection_time)
-    return t - reinfection_time  
-end
 
-# Reinfection effect: set T and I1
-function reinfection_effect!(integrator)
-    T0, I10 = 4E7, 75 
-    integrator.u[1] = T0
-    integrator.u[2] = I10
-end
-
-function solve_reinfection(tspan, y0, params, reinfection_time)
+function solve_reinfection(tspan, y0, params)
     state_history = StateHistory(y0)
     wrapper!(du, u, p, t) = LCTModel!(du, u, p, t, state_history)
     prob = ODEProblem(wrapper!, y0, tspan, params)
     
-    reinfection_cb = ContinuousCallback(
-        (u, t, integrator) -> reinfection_condition(u, t, integrator, reinfection_time),
-        reinfection_effect!
-    )
-    
     sol = solve(prob, TRBDF2(autodiff = false);
                 reltol = 1e-4, abstol = 1e-5,
-                dtmax = 1e-1, dtmin = 1e-8,
-                callback = reinfection_cb)
+                dtmax = 1e-1, dtmin = 1e-8)
     return (sol.t, hcat(sol.u...))
 end
 
+const THRESHOLD = 1.0  # Threshold for zero-crossing detection
+
+# Condition function for detecting near-zero crossing
+function condition(u, t, integrator)
+    # Check if any state is below the threshold
+    (u[2] < THRESHOLD) || (u[3] < THRESHOLD) || (u[4] < THRESHOLD)
+end
+
+# Affect function to modify state and derivative
+function affect!(integrator)
+    for i in 2:4  # Indices of I1, I2, V
+        if integrator.u[i] < THRESHOLD
+            integrator.u[i] = 0.0  # Set state to zero
+            integrator.uprev[i] = 0.0  # Set derivative to zero
+        end
+    end
+end
+
+# Create the callback
+cb = DiscreteCallback(condition, affect!)
+
+# Wrapper to solve the problem with the callback
+function solve_with_callback(tspan, y0, params)
+    state_history = StateHistory(y0)
+    wrapper!(du, u, p, t) = LCTModel!(du, u, p, t, state_history)
+    prob = ODEProblem(wrapper!, y0, tspan, params)
+    
+    sol = solve(prob, TRBDF2(autodiff = false);
+                callback = cb,
+                reltol = 1e-4, abstol = 1e-5,
+                dtmax = 1e-1, dtmin = 1e-8)
+    return (sol.t, hcat(sol.u...))
+end
