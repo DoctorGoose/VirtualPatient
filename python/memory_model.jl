@@ -52,9 +52,12 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     # Retrieve delayed state
     CD8_E_tau = interpolate_delay(state_history, 4, t - tau_memory)  # 5th state (CD8_E)
 
+    # Conditionally set beta*T*V term to zero if V < 1
+    beta_T_V = V < 1 ? 0.0 : beta * T * V
+
     # Equations
-    du[1] = -beta * T * V  # Target Cells
-    du[2] = beta * T * V - k * I1  # Eclipse Cells
+    du[1] = -beta_T_V  # Target Cells
+    du[2] = beta_T_V - k * I1  # Eclipse Cells
     du[3] = k * I1 - delta * I2 - delta_E * CD8_E * I2 / (K_delta_E + I2)  # Infected Cells
     du[4] = p_param * I2 - c * V  # Virus
     du[5] = a * z[end] + (eta * CD8_M * I1)/(I1 + K_I1) - d_E * CD8_E  # Effector T Cells (+  a * z[end])
@@ -77,7 +80,7 @@ function solve_reinfection(tspan, y0, params)
     return (sol.t, hcat(sol.u...))
 end
 
-const THRESHOLD = 1.0  # Threshold for zero-crossing detection
+const THRESHOLD = 1.5  # Threshold for zero-crossing detection
 
 # Condition function for detecting near-zero crossing
 function condition(u, t, integrator)
@@ -90,7 +93,6 @@ function affect!(integrator)
     for i in 2:4  # Indices of I1, I2, V
         if integrator.u[i] < THRESHOLD
             integrator.u[i] = 0.0  # Set state to zero
-            integrator.uprev[i] = 0.0  # Set derivative to zero
         end
     end
 end
