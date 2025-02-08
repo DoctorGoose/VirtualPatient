@@ -47,7 +47,7 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     z = u[7:end]
 
     # Unpack parameters
-    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, K_I1, tau_memory, damp = p
+    beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, K_I1, tau_memory = p
 
     # Retrieve delayed state
     CD8_E_tau = interpolate_delay(state_history, 5, t - tau_memory)  # 5th state (CD8_E)
@@ -56,14 +56,8 @@ function LCTModel!(du, u, p, t, state_history::StateHistory)
     activation = (xi*CD8_M * I1) / (I1 + K_I1)
 
     # Equations
-
-    if t>damp && V<10
-        du[1] = 0  # Target Cells
-        du[2] = - k * I1# - delta_E * CD8_E * I1 / (K_delta_E + I1) # Eclipse Cells
-    else
-        du[1] = -beta * T * V  # Target Cells
-        du[2] = beta * T * V - k * I1# - delta_E * CD8_E * I1 / (K_delta_E + I1) # Eclipse Cells
-    end
+    du[1] = -beta * T * V  # Target Cells
+    du[2] = beta * T * V - k * I1# - delta_E * CD8_E * I1 / (K_delta_E + I1) # Eclipse Cells
     du[3] = k * I1 - delta * I2 - delta_E * CD8_E * I2 / (K_delta_E + I2)  # Infected Cells
     du[4] = p_param * I2 - c * V  # Virus
     du[5] = a * z[end] + eta*activation - d_E * CD8_E  # Effector T Cells 
