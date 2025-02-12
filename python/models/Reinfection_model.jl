@@ -54,7 +54,7 @@ function ReinfectionModel!(du, u, p, t, state_history::StateHistory)
 
     # Equations
 
-    if t>damp && V<10
+    if t>damp && V<35
         du[1] = 0  # Target Cells
         du[2] = - k * I1# - delta_E * CD8_E * I1 / (K_delta_E + I1) # Eclipse Cells
     else
@@ -63,7 +63,7 @@ function ReinfectionModel!(du, u, p, t, state_history::StateHistory)
     end
     du[3] = k * I1 - delta * I2 - delta_E * CD8_E * I2 / (K_delta_E + I2)  # Infected Cells
     du[4] = p_param * I2 - c * V  # Virus
-    du[5] = a * z[end] + xi*eta * CD8_M * I1 - d_E * CD8_E  # Effector T Cells 
+    du[5] = a * z[end] + (eta*CD8_M * I1)/(K_I1 + I1) - d_E * CD8_E  # Effector T Cells 
     du[6] = zeta * CD8_E_tau #- eta * CD8_M * I1 # Memory T Cells
 
     # Delayed compartments
