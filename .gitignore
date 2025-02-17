@@ -58,8 +58,6 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -159,10 +157,3 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-*.db
-python/sql/V_dev4.db-journal
-python/V_dev_summary.xlsx
-python/plots/2D_Projections/Viral_Full_Cohort.svg
-python/plots/2D_Projections/Viral_Full_Cohort.svg
-python/Results.ipynb
-python/Results.ipynb
