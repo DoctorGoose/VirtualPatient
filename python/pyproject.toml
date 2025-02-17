@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "goose"
+version = "0.1"
+description = "Global Optimization and ODE Solving Extension, goose."
+authors = [{name = "Dr. Jordan JA Weaver"}]
+license = {text = "MIT"}
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "seaborn"
+]
+requires-python = ">=3.12"
+
+[project.urls]
+Homepage = "https://github.com/DoctorGoose/VirtualPatient" 
