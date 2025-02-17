@@ -8,6 +8,15 @@ from scipy.optimize import OptimizeResult
 from scipy.optimize import differential_evolution, shgo, dual_annealing, basinhopping, direct, brute, minimize
 import copy
 
+# Julia and model setup
+# TODO pass model location (+handle?) as args
+os.environ["JULIA_NUM_THREADS"] = "1"
+from julia.api import Julia
+julia = Julia(sysimage="../sysimage_env/sysimage.so")
+from julia import Main
+Main.include("../models/Primary_model.jl")
+Main.include("../models/Reinfection_model.jl")
+
 ### Generally useful (infrastructure) functions ###
 def sci_format(x, pos):
     coeff, exp = f"{x:.0e}".split("e")
@@ -355,9 +364,8 @@ def solve_with_julia(t_span, y0, params, reinfection=False):
     return JuliaODESolution(t=t_values, y=y_values)
 
 def JuliaSolve(task):
-    def inner_solve(param_set, states_config, t_span, reinfection):
-        #print('JuliaSolve', reinfection)
-        states_config_copy = states_config.copy()
+    def inner_solve(param_set, states, t_span, reinfection=False):
+
         # Prepare parameters and initial conditions for Julia
         params = {
             "beta": param_set.beta.val,
@@ -374,11 +382,11 @@ def JuliaSolve(task):
             "eta": param_set.eta.val,
             "K_I1": param_set.K_I1.val,
             "tau_memory": param_set.tau_memory.val,
-            "damp": param_set.damp.val,
+            "damp": param_set.damp.val if hasattr(param_set, 'damp') else 14,
         }
 
-        states_instance = States(states_config_copy)
-        y0 = np.array([states_instance.states[config['label']].initial_value for config in states_config])
+        states_instance = States(states)
+        y0 = states_instance.y0
         y0[0] = param_set.T0.val
         y0[1] = param_set.I10.val
         y0[5] = param_set.ME.val
@@ -391,41 +399,47 @@ def JuliaSolve(task):
     return sol
 
 # Curent development area 
+
 class Parameter:
-    def __init__(self, name, val=None, l_lim=None, u_lim=None, method='fixed', space='log10'):
+    def __init__(self, name, val=None, bounds=None, method='fixed', space='log10'):
         self.name = name
-        self.space = space
-        self.l_lim = self._transform_space(l_lim)
-        self.u_lim = self._transform_space(u_lim)
         self.val = val
         self.method = method
+        self.space = space
+        if method != 'fixed' and bounds is not None:
+            self.l_lim, self.u_lim = self._transform_space(bounds)
+        else:
+            self.l_lim, self.u_lim = None, None
 
-    def _transform_space(self, bound):
+    def _transform_space(self, bounds):
+        lower, upper = bounds
         if self.space == 'log10':
-            return np.log10(bound)
+            return np.log10(lower), np.log10(upper)
         elif self.space == 'normal':
-            return bound
+            return lower, upper
+        return bounds  # Default case
 
     def _inverse_transform_space(self, value):
         if self.space == 'log10':
             return 10 ** value
-        elif self.space == 'normal':
-            return value
+        return value
 
     def __repr__(self):
         return f"{self.val:.2e}"
-
-    def sweep(self, num_points=100):
-        values = np.linspace(self.l_lim, self.u_lim, num=num_points)
-        if self.space == 'log10':
-            values = 10 ** values  # Inverse transform back to natural space
-        return [self._convert_to_type(val) for val in values]
 
 class Parameters:
     def __init__(self, **kwargs):
         self._parameters = kwargs
 
+    # Provide custom pickling state so that deepcopy doesn't trigger __getattr__ recursively.
+    def __getstate__(self):
+        return self._parameters
+
+    def __setstate__(self, state):
+        self._parameters = state
+
     def __getattr__(self, item):
+        # This only gets called if the attribute isn't found via normal means.
         if item in self._parameters:
             return self._parameters[item]
         raise AttributeError(f"'Parameters' object has no attribute '{item}'")
@@ -436,17 +450,11 @@ class Parameters:
         else:
             self._parameters[key] = value
 
-    def __getstate__(self):
-        return self._parameters
-
-    def __setstate__(self, state):
-        self._parameters = state
+    def __repr__(self):
+        return f"Parameters({', '.join([f'{k}={v}' for k, v in self._parameters.items()])})"
 
     def items(self):
         return self._parameters.items()
-
-    def __repr__(self):
-        return f"Parameters({', '.join([f'{k}={v}' for k, v in self._parameters.items()])})"
 
     def load_parameters_from_dataframe(self, df_params, patient_id):
         if patient_id not in df_params['id'].values:
@@ -462,26 +470,36 @@ class Parameters:
                     print(f"Parameter '{param_name}' for ID {patient_id} is missing in the parameter file. Falling back to original values.")
 
 class State:
-    def __init__(self, label: str, initial_value: float = 0.0, sse: bool = False, scale: float = 1.0):
+    def __init__(self, label: str, initial_value: float = 0.0, sse: bool = False):
         self.label = label
         self.initial_value = initial_value
-        self.time_points = np.array([0.0])
         self.sse = sse
-        self.scale = scale
 
     def __repr__(self):
-        return f"State(label={self.label}, initial_value={self.initial_value}, sse={self.sse})"
+        return f"State(label='{self.label}', initial_value={self.initial_value}, sse={self.sse})"
 
 class States:
-    def __init__(self, states_config: list):
-        self.states = {config['label']: State(**config) for config in states_config}
-        self.state_labels = [state.label for state in self.states.values()]
+    def __init__(self, states_config: list): # Create an ordered list of states 
+        self.states = [State(**config) for config in states_config]
+        self._state_dict = {state.label: state for state in self.states}
 
-    def __getattr__(self, name: str) -> float:
-        return self.states[name].get_latest_value()
+    @property
+    def y0(self):
+        return np.array([state.initial_value for state in self.states])
+
+    def __getitem__(self, key): # Allows access by index or label
+        if isinstance(key, int):
+            return self.states[key]
+        elif isinstance(key, str):
+            try:
+                return self._state_dict[key]
+            except KeyError:
+                raise KeyError(f"State with label '{key}' not found.")
+        else:
+            raise TypeError("Key must be an integer index or a string label.")
 
     def __repr__(self):
-        return f"States({', '.join([f'{k}={v}' for k, v in self.states.items()])}, sse={self.sse})"
+        return f"States({', '.join(repr(state) for state in self.states)})"
     
 class Patient:
     def __init__(self, id, color, t_span, df, parameters, states, df_params=None, sol=None, solve_time=np.nan, sse=np.inf, sse_statewise=np.inf, reinfection=False):
