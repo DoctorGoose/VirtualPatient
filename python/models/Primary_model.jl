@@ -1,6 +1,5 @@
 # Primary Infection Model
-push!(LOAD_PATH, "../goose/")  
-using GooseUtils 
+include("../goose/utils.jl")
 
 function LCTModel!(du, u, p, t, state_history)
     update!(state_history, t, u)

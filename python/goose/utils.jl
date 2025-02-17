@@ -1,11 +1,7 @@
 # julia utilities
-module GooseUtils
-
 using DifferentialEquations
 using ThreadsX
 using Logging
-
-export suppress_warnings, StateHistory, update!, interpolate_delay, solve_ode_model, tmap_model
 
 # Runs `f` with a logger that only shows errors (and above).
 function suppress_warnings(f::Function)
@@ -66,5 +62,3 @@ function tmap_model(model_func!, tspan, y0, param_sets)
     sols = ThreadsX.map(params -> solve_ode_model(model_func!, tspan, y0, params), param_sets)
     return length(sols) == 1 ? sols[1] : sols
 end
-
-end  # module GooseUtils

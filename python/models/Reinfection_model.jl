@@ -1,6 +1,5 @@
 # ReinfectionModel.jl
-push!(LOAD_PATH, "../goose/")  
-using GooseUtils 
+include("../goose/utils.jl")
 
 function ReinfectionModel!(du, u, p, t, state_history)
     update!(state_history, t, u)
