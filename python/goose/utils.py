@@ -318,15 +318,9 @@ class JuliaODESolution:
     def __repr__(self):
         return f"JuliaODESolution(t={self.t}, y={self.y})"
 
-def solve_with_julia(t_span, y0, params, reinfection=False):
+def solve_with_julia(t_span, y0, params, param_keys, reinfection=False):
     y0 = np.asarray(y0, dtype=np.float64)
-    
-    # Fixed parameter order
-    param_keys = ["beta", "k", "p", "c", "delta", "xi", "a",
-                  "d_E", "delta_E", "K_delta_E", "zeta", "eta", "K_I1", "tau_memory"]
-    if reinfection:
-        param_keys.append("damp")
-    
+
     # Convert params into proper arrays
     if isinstance(params, dict):
         params_julia = np.asarray([params[key] for key in param_keys], dtype=np.float64)
@@ -360,9 +354,7 @@ def JuliaSolve(task):
     def inner_solve(param_set, states, t_span, reinfection=False):
         # Fixed parameter order
         param_order = ["beta", "k", "p", "c", "delta", "xi", "a",
-                       "d_E", "delta_E", "K_delta_E", "zeta", "eta", "K_I1", "tau_memory"]
-        if reinfection:
-            param_order.append("damp")
+                       "d_E", "delta_E", "K_delta_E", "zeta", "eta", "K_I1", "tau_memory", "damp"]
         
         # Check for vectorized mode: if any parameter’s .val is an array.
         is_vectorized = any(
@@ -376,7 +368,7 @@ def JuliaSolve(task):
             y0_local[0] = param_set.T0.val
             y0_local[1] = param_set.I10.val
             y0_local[5] = param_set.ME.val
-            sol = solve_with_julia(t_span, y0_local, params, reinfection=reinfection)
+            sol = solve_with_julia(t_span, y0_local, params, param_keys=param_order, reinfection=reinfection)
             sol.y[4] += param_set.E0.val
             sol.y[5] += param_set.M0.val
             return sol
@@ -394,7 +386,7 @@ def JuliaSolve(task):
             y0_local[0] = param_set.T0.val
             y0_local[1] = param_set.I10.val
             y0_local[5] = param_set.ME.val
-            sols = solve_with_julia(t_span, y0_local, batch, reinfection=reinfection)
+            sols = solve_with_julia(t_span, y0_local, batch, param_keys=param_order, reinfection=reinfection)
             def get_sample(val, i):
                 return val[i] if isinstance(val, np.ndarray) and val.ndim > 0 else val
             for i, sol in enumerate(sols):
@@ -638,6 +630,7 @@ class Patient:
             all_params = [param.val for param in self.parameters._parameters.values()]
             self.results_in_memory.append((all_params, list(sse_db_components.values()) + [sse_db], str(pid)))
 
+    # TODO fix vectorized (updating results, writing out)
     def objective_function(self, x, verbose=False):
         # Update parameters from the optimizer's input.
         for i, name in enumerate(self.param_names):
@@ -667,16 +660,31 @@ class Patient:
     def write_results_to_db(self, path):
         conn = sqlite3.connect(path)
         cursor = conn.cursor()
+
+        # Ensure all NumPy arrays are converted properly
+        def to_tuple_safe(array):
+            """Ensure NumPy arrays are C-contiguous and converted to tuples."""
+            if isinstance(array, np.ndarray):
+                return tuple(np.ascontiguousarray(array).flatten())  # Flatten to ensure 1D tuple
+            return tuple(array)  # Handle standard Python lists/tuples
+        
+        # Prepare data for insertion
+        data_to_insert = [
+            to_tuple_safe(p) + to_tuple_safe(e) + (pid,) 
+            for p, e, pid in self.results_in_memory
+        ]
+
         cursor.executemany('''
             INSERT INTO evaluations (
                 E0, M0, ME, T0, I10, beta, k, p, c, delta, xi, a, d_E, delta_E, K_delta_E,
-                zeta, eta, K_I1, tau_memory, V_sse, CD8TE_sse, CD8TM_sse, sse, PID
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', [tuple(p) + tuple(e) + (pid,) for p, e, pid in self.results_in_memory])
+                zeta, eta, K_I1, tau_memory, damp, V_sse, CD8TE_sse, CD8TM_sse, sse, PID
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', data_to_insert)
+
         conn.commit()
         conn.close()
-        self.results_in_memory = [] # Flush the results from memory
-        print(f'Results saved to {path}.',flush=True)
+        self.results_in_memory = []  # Flush the results from memory
+        print(f'Results saved to {path}.', flush=True)
 
     def optimize_parameters(self, method='halton', iter=1000, verbose=False, path='output', local_iter=2500, local_method='Nelder-Mead', buff=True, vectorized=False):
         fit_parameters = {name: param for name, param in self.parameters._parameters.items() if param.method in ['fit', 'refine']}
@@ -928,7 +936,7 @@ class Patient:
                 #result.x = initial_values
 
         # Write results to database
-        db_path = f'sql/{path}.db'
+        db_path = f'../sql/{path}.db'
         os.makedirs('sql', exist_ok=True)
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()

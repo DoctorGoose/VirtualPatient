@@ -1,9 +1,8 @@
-# julia utilities
 using DifferentialEquations
 using ThreadsX
 using Logging
 
-# Runs `f` with a logger that only shows errors (and above).
+# Run function `f` with a logger that only shows errors.
 function suppress_warnings(f::Function)
     logger = ConsoleLogger(stderr, Logging.Error)
     return with_logger(logger) do
@@ -11,38 +10,44 @@ function suppress_warnings(f::Function)
     end
 end
 
-# Keeps a history of states (each state vector prepended with its time) for delay interpolation.
+# Store times separately from state vectors for fast interpolation.
 struct StateHistory
-    history::Vector{Vector{Float64}}
+    times::Vector{Float64}
+    states::Vector{Vector{Float64}}
 end
 
-StateHistory(y0::Vector{Float64}) = StateHistory([vcat(0.0, y0)])
+StateHistory(y0::Vector{Float64}) = StateHistory([0.0], [copy(y0)])
 
-
-# Appends the current time and state vector to the history.
+# Append the current time and state vector to the history.
 function update!(state_history::StateHistory, t::Float64, y::Vector{Float64})
-    push!(state_history.history, vcat(t, y))
+    push!(state_history.times, t)
+    push!(state_history.states, copy(y))
 end
 
-
-# Interpolates the delayed state value for a given state index at time `t_delay`.
+# Interpolate the delayed state value for a given state index at time `t_delay`.
 # If `t_delay` is before time zero or beyond the history, returns the appropriate boundary value.
 function interpolate_delay(state_history::StateHistory, state_idx::Int, t_delay::Float64)
-    history = state_history.history
+    times = state_history.times
+    states = state_history.states
     if t_delay <= 0.0
-        return history[1][state_idx + 1]  # initial condition
+        @inbounds return states[1][state_idx]
     end
-    idx = findlast(x -> x[1] <= t_delay, history)
-    if idx === nothing || idx == length(history)
-        return history[end][state_idx + 1]
+    # Use binary search for the last time <= t_delay.
+    idx = searchsortedlast(times, t_delay)
+    if idx == length(times)
+        @inbounds return states[end][state_idx]
     end
-    t1, t2 = history[idx][1], history[idx + 1][1]
-    y1, y2 = history[idx][state_idx + 1], history[idx + 1][state_idx + 1]
-    return y1 + (t_delay - t1) * (y2 - y1) / (t2 - t1)
+    @inbounds begin
+        t1 = times[idx]
+        t2 = times[idx+1]
+        y1 = states[idx][state_idx]
+        y2 = states[idx+1][state_idx]
+        return y1 + (t_delay - t1) * (y2 - y1) / (t2 - t1)
+    end
 end
 
 # ODE solver that accepts a model function `model_func!` with signature
-#`(du, u, p, t, state_history)` and returns a tuple `(t, y)`, where `y` is a matrix of solution values.
+# `(du, u, p, t, state_history)` and returns a tuple `(t, y)`, where `y` is a matrix of solution values.
 function solve_ode_model(model_func!, tspan, y0, params)
     state_history = StateHistory(y0)
     wrapper!(du, u, p, t) = model_func!(du, u, p, t, state_history)
@@ -50,7 +55,7 @@ function solve_ode_model(model_func!, tspan, y0, params)
     
     isoutofdomain = (u, p, t) -> any(x -> x < -1e-3, u)
     
-    # Solve the ODE, asking to save at the time points given in tspan.
+    # Solve the ODE, saving at the time points given in tspan.
     sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=false);
                                           reltol=1e-4, abstol=1e-5,
                                           dtmax=1e-1, dtmin=1e-8,
@@ -64,6 +69,5 @@ end
 # Applies `solve_ode_model` in parallel over a collection of parameter sets using ThreadsX.
 function tmap_model(model_func!, tspan, y0, param_sets)
     param_sets = (isa(param_sets, AbstractVector) && isa(param_sets[1], AbstractVector)) ? param_sets : [param_sets]
-    sols = ThreadsX.map(params -> solve_ode_model(model_func!, tspan, y0, params), param_sets)
-    return sols
+    return ThreadsX.map(params -> solve_ode_model(model_func!, tspan, y0, params), param_sets)
 end
