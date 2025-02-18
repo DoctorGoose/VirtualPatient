@@ -46,19 +46,24 @@ end
 function solve_ode_model(model_func!, tspan, y0, params)
     state_history = StateHistory(y0)
     wrapper!(du, u, p, t) = model_func!(du, u, p, t, state_history)
-    prob = ODEProblem(wrapper!, y0, tspan, params)
+    prob = ODEProblem(wrapper!, y0, (tspan[1], tspan[end]), params)
+    
     isoutofdomain = (u, p, t) -> any(x -> x < -1e-3, u)
+    
+    # Solve the ODE, asking to save at the time points given in tspan.
     sol = suppress_warnings(() -> solve(prob, TRBDF2(autodiff=false);
                                           reltol=1e-4, abstol=1e-5,
                                           dtmax=1e-1, dtmin=1e-8,
+                                          saveat=tspan,
                                           isoutofdomain=isoutofdomain))
+    
+    @info "Solution computed: length(sol.t) = $(length(sol.t))"
     return (sol.t, hcat(sol.u...))
 end
 
 # Applies `solve_ode_model` in parallel over a collection of parameter sets using ThreadsX.
-# If only one parameter set is provided, returns its solution (still sometimes faster than running without ThreadsX)
 function tmap_model(model_func!, tspan, y0, param_sets)
     param_sets = (isa(param_sets, AbstractVector) && isa(param_sets[1], AbstractVector)) ? param_sets : [param_sets]
     sols = ThreadsX.map(params -> solve_ode_model(model_func!, tspan, y0, params), param_sets)
-    return length(sols) == 1 ? sols[1] : sols
+    return sols
 end

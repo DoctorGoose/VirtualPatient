@@ -1,8 +1,10 @@
 # Primary Infection Model
 include("../goose/utils.jl")
 
+
 function LCTModel!(du, u, p, t, state_history)
     update!(state_history, t, u)
+    
     # Unpack states
     T, I1, I2, V, CD8_E, CD8_M = u[1:6]
     z = u[7:end]
@@ -20,12 +22,10 @@ function LCTModel!(du, u, p, t, state_history)
     du[4] = p_param * I2 - c * V
     du[5] = a * z[end] - d_E * CD8_E
     du[6] = zeta * CD8_E_tau
-    # Delayed compartments
     du[7] = xi * I1 - a * z[1]
     du[8:end] .= a .* (z[1:end-1] .- z[2:end])
 end
 
-# Wrapper for parallel solving 
 function tmap_LCTModel(tspan, y0, param_sets)
     return tmap_model(LCTModel!, tspan, y0, param_sets)
 end

@@ -4,13 +4,14 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import sqlite3
-from scipy.optimize import OptimizeResult
+from scipy.optimize import OptimizeResult, OptimizeWarning, show_options
 from scipy.optimize import differential_evolution, shgo, dual_annealing, basinhopping, direct, brute, minimize
+import warnings
 import copy
 
 # Julia and model setup
 # TODO pass model location (+handle?) as args
-os.environ["JULIA_NUM_THREADS"] = "1"
+os.environ["JULIA_NUM_THREADS"] = "4"
 from julia.api import Julia
 julia = Julia(sysimage="../sysimage_env/sysimage.so")
 from julia import Main
@@ -311,92 +312,96 @@ def ASA(objective_function, x0, bounds, maxiter=100, initial_temp=1.0, cooling_r
 
 class JuliaODESolution:
     def __init__(self, t, y):
-        self.t = np.array(t)  # Time points
-        self.y = np.array(y)  # Transposed solution values (states over time)
+        self.t = np.array(t, dtype=np.float64)  # Time points
+        self.y = np.array(y, dtype=np.float64)  # Matrix of solution values
 
     def __repr__(self):
         return f"JuliaODESolution(t={self.t}, y={self.y})"
 
 def solve_with_julia(t_span, y0, params, reinfection=False):
-    t_span = (float(np.float64(t_span[0])), float(np.float64(t_span[-1])))
-    y0 = [float(np.float64(val)) for val in y0]
-    #print('solve_with_julia', reinfection)
-    if reinfection == False:
-        params_julia = [
-        float(np.float64(params["beta"])),
-        float(np.float64(params["k"])),
-        float(np.float64(params["p"])),
-        float(np.float64(params["c"])),
-        float(np.float64(params["delta"])),
-        float(np.float64(params["xi"])),
-        float(np.float64(params["a"])),
-        float(np.float64(params["d_E"])),
-        float(np.float64(params["delta_E"])),
-        float(np.float64(params["K_delta_E"])),
-        float(np.float64(params["zeta"])),
-        float(np.float64(params["eta"])),
-        float(np.float64(params["K_I1"])),
-        float(np.float64(params["tau_memory"])),
-        ]
-        t_values, y_values = Main.tmap_LCTModel(t_span, y0, params_julia)
+    y0 = np.asarray(y0, dtype=np.float64)
+    
+    # Fixed parameter order
+    param_keys = ["beta", "k", "p", "c", "delta", "xi", "a",
+                  "d_E", "delta_E", "K_delta_E", "zeta", "eta", "K_I1", "tau_memory"]
+    if reinfection:
+        param_keys.append("damp")
+    
+    # Convert params into proper arrays
+    if isinstance(params, dict):
+        params_julia = np.asarray([params[key] for key in param_keys], dtype=np.float64)
     else:
-        params_julia = [
-        float(np.float64(params["beta"])),
-        float(np.float64(params["k"])),
-        float(np.float64(params["p"])),
-        float(np.float64(params["c"])),
-        float(np.float64(params["delta"])),
-        float(np.float64(params["xi"])),
-        float(np.float64(params["a"])),
-        float(np.float64(params["d_E"])),
-        float(np.float64(params["delta_E"])),
-        float(np.float64(params["K_delta_E"])),
-        float(np.float64(params["zeta"])),
-        float(np.float64(params["eta"])),
-        float(np.float64(params["K_I1"])),
-        float(np.float64(params["tau_memory"])),
-        float(np.float64(params["damp"])),
-        ]
-        t_values, y_values = Main.tmap_ReinfectionModel(t_span, y0, params_julia)
-    t_values = np.array(t_values, dtype=np.float64)
-    y_values = np.array(y_values, dtype=np.float64)
+        params_julia = [np.asarray([p[key] for key in param_keys], dtype=np.float64)
+                        for p in params]
+    
+    # Call Julia model function.
+    if reinfection:
+        result = Main.tmap_ReinfectionModel(t_span, y0.tolist(), params_julia)
+    else:
+        result = Main.tmap_LCTModel(t_span, y0.tolist(), params_julia)
+    
+    # Normalize the result: always an array (list) of tuples.
+    if isinstance(result, list):
+        sols = [JuliaODESolution(np.array(sol[0], dtype=np.float64),
+                                  np.array(sol[1], dtype=np.float64))
+                for sol in result]
+    else:
+        # If not a list, wrap it in a list.
+        sols = [JuliaODESolution(np.array(result[0], dtype=np.float64),
+                                  np.array(result[1], dtype=np.float64))]
 
-    return JuliaODESolution(t=t_values, y=y_values)
+    # If only one solution, optionally return the single object.
+    if len(sols) == 1:
+        return sols[0]
+    else:
+        return sols
 
 def JuliaSolve(task):
     def inner_solve(param_set, states, t_span, reinfection=False):
-
-        # Prepare parameters and initial conditions for Julia
-        params = {
-            "beta": param_set.beta.val,
-            "k": param_set.k.val,
-            "p": param_set.p.val,
-            "c": param_set.c.val,
-            "delta": param_set.delta.val,
-            "xi": param_set.xi.val,
-            "a": param_set.a.val,
-            "d_E": param_set.d_E.val,
-            "delta_E": param_set.delta_E.val,
-            "K_delta_E": param_set.K_delta_E.val,
-            "zeta": param_set.zeta.val,
-            "eta": param_set.eta.val,
-            "K_I1": param_set.K_I1.val,
-            "tau_memory": param_set.tau_memory.val,
-            "damp": param_set.damp.val if hasattr(param_set, 'damp') else 14,
-        }
-
-        states_instance = States(states)
-        y0 = states_instance.y0
-        y0[0] = param_set.T0.val
-        y0[1] = param_set.I10.val
-        y0[5] = param_set.ME.val
-        sol = solve_with_julia(t_span, y0, params, reinfection=reinfection)
-        sol.y[4] += param_set.E0.val  # Add the background T Effectors (E0)
-        sol.y[5] += param_set.M0.val  # Add the background T Effector Memory (M0)
-        return sol
-
-    sol = inner_solve(*task)
-    return sol
+        # Fixed parameter order
+        param_order = ["beta", "k", "p", "c", "delta", "xi", "a",
+                       "d_E", "delta_E", "K_delta_E", "zeta", "eta", "K_I1", "tau_memory"]
+        if reinfection:
+            param_order.append("damp")
+        
+        # Check for vectorized mode: if any parameter’s .val is an array.
+        is_vectorized = any(
+            isinstance(getattr(param_set, name).val, np.ndarray) and getattr(param_set, name).val.ndim > 0
+            for name in param_order if hasattr(param_set, name)
+        )
+        
+        if not is_vectorized:
+            params = {name: getattr(param_set, name).val for name in param_order}
+            y0_local = States(states).y0
+            y0_local[0] = param_set.T0.val
+            y0_local[1] = param_set.I10.val
+            y0_local[5] = param_set.ME.val
+            sol = solve_with_julia(t_span, y0_local, params, reinfection=reinfection)
+            sol.y[4] += param_set.E0.val
+            sol.y[5] += param_set.M0.val
+            return sol
+        else:
+            # Build a batch of complete parameter dictionaries.
+            n_samples = getattr(param_set, param_order[0]).val.shape[0]
+            batch = []
+            for i in range(n_samples):
+                sample_params = {}
+                for name in param_order:
+                    val = getattr(param_set, name).val
+                    sample_params[name] = val[i] if isinstance(val, np.ndarray) and val.ndim > 0 else val
+                batch.append(sample_params)
+            y0_local = States(states).y0.copy()
+            y0_local[0] = param_set.T0.val
+            y0_local[1] = param_set.I10.val
+            y0_local[5] = param_set.ME.val
+            sols = solve_with_julia(t_span, y0_local, batch, reinfection=reinfection)
+            def get_sample(val, i):
+                return val[i] if isinstance(val, np.ndarray) and val.ndim > 0 else val
+            for i, sol in enumerate(sols):
+                sol.y[4] += get_sample(getattr(param_set, "E0").val, i)
+                sol.y[5] += get_sample(getattr(param_set, "M0").val, i)
+            return sols
+    return inner_solve(*task)
 
 # Curent development area 
 
@@ -520,16 +525,51 @@ class Patient:
         self.param_names = list(self.parameters._parameters.keys())
         self.results_in_memory = []  # To store results for later DB writes
 
-    def solve(self):
+    def solve(self, verbose=False):
+        timer = TimeManager()  # Start timing
         try:
-            self.sol = JuliaSolve((
-                self.parameters, self.states, self.t_span
-            ))
+            solutions = JuliaSolve((self.parameters, self.states, self.t_span, self.reinfection))
         except Exception as e:
-            self.sol = None
+            solutions = None
             print(f"Error solving patient {self.id}: {e}")
-    
-    def compare(self):
+        finally:
+            self.solve_time = timer.get_elapsed_time()  # Set elapsed time
+            #if verbose: print(f"ID {self.id} solve time: {self.solve_time}")
+            del timer  # Destroy the TimeManager instance
+            return solutions
+
+    def _compute_sse_for_solution(self, sol, df, states_to_sse):
+        """Compute the total SSE and state‐wise SSE for one solution."""
+        total_sse = 0
+        sse_array = [0] * len(self.states)
+        for idx, state in enumerate(self.states):
+            state_label = state['label']
+            if state_label in states_to_sse and state_label in df.columns:
+                data_values = df[state_label].values
+                time_points = df['DAY'].values
+                valid_indices = ~np.isnan(data_values)
+                data_values = data_values[valid_indices]
+                time_points = time_points[valid_indices]
+
+                if len(data_values) > 0:
+                    model_time_points = sol.t
+                    model_values = sol.y[idx]
+                    if model_values.shape[0] != len(model_time_points):
+                        model_values = np.transpose(model_values)
+                    # Interpolate model values to data time points
+                    interpolated_model_values = np.interp(time_points, model_time_points, model_values)
+                    state_sse = 0
+                    for d_val, m_val, t in zip(data_values, interpolated_model_values, time_points):
+                        log_diff = (np.log10(max(d_val, 1.0)) - np.log10(max(m_val, 1.0))) ** 2
+                        if state_label in ['CD8TE', 'CD8TM'] and t == 0:
+                            log_diff *= 10  # Weight for Time = 0
+                        state_sse += log_diff
+                    sse_array[idx] = state_sse
+                    if state.get('sse', True):
+                        total_sse += state_sse
+        return total_sse, sse_array
+
+    def compare(self, verbose=False):
         df = self.df
         shedders = [103, 107, 110, 111, 112, 204, 207, 302, 307, 308, 311, 312] + [i for i in range(1, 45) if i not in {10, 33, 34, 35, 37, 38, 39, 40, 41, 42, 43, 44}]
         targets = [self.id]
@@ -598,18 +638,32 @@ class Patient:
             all_params = [param.val for param in self.parameters._parameters.values()]
             self.results_in_memory.append((all_params, list(sse_db_components.values()) + [sse_db], str(pid)))
 
-    def objective_function(self, x):
+    def objective_function(self, x, verbose=False):
+        # Update parameters from the optimizer's input.
         for i, name in enumerate(self.param_names):
             if self.parameters._parameters[name].space == 'log10':
-                self.parameters._parameters[name].val = 10**x[i]
+                self.parameters._parameters[name].val = 10 ** x[i]
             else:
                 self.parameters._parameters[name].val = x[i]
+        # Solve the ODE with the new parameters.
+        solutions = self.solve(verbose=verbose)
+       
+        # Compare the solution(s) with the data.
+        if isinstance(solutions, list):
+            sses = []
+            for solution in solutions:
+                self.sol = solution
+                self.compare(verbose=verbose)
+                sses.append(self.sse)
+            # Return the SSE as a list for vectorized mode
+            return sses
+        else:
+            # Handle the case where solutions is a single object
+            self.sol = solutions
+            self.compare(verbose=verbose)
+            # Return the SSE as a scalar for single-set mode
+            return self.sse
 
-        self.solve()
-        self.compare()
-
-        return self.sse
-    
     def write_results_to_db(self, path):
         conn = sqlite3.connect(path)
         cursor = conn.cursor()
@@ -624,13 +678,14 @@ class Patient:
         self.results_in_memory = [] # Flush the results from memory
         print(f'Results saved to {path}.',flush=True)
 
-    def optimize_parameters(self, method='halton', iter=1000, verbose=False, path='output', local_iter=2500, local_method='Nelder-Mead', buff=True):
+    def optimize_parameters(self, method='halton', iter=1000, verbose=False, path='output', local_iter=2500, local_method='Nelder-Mead', buff=True, vectorized=False):
         fit_parameters = {name: param for name, param in self.parameters._parameters.items() if param.method in ['fit', 'refine']}
 
         if not fit_parameters:
             print("No parameters to optimize")
-            self.solve()
-            self.compare()
+            self.sol = self.solve(verbose=verbose)
+            self.compare(verbose=verbose)
+            print(f'ID: {self.id} solved in: {self.solve_time}, cost: {self.sse}')
             return (None, self)
 
         initial_values = []
@@ -642,7 +697,7 @@ class Patient:
                 initial_values.append(param.val)
 
         bounds = [(param.l_lim, param.u_lim) for param in fit_parameters.values()]
-        self.param_names = list(fit_parameters.keys())  # Save param_names as instance variable
+        self.param_names = list(fit_parameters.keys()) 
         number_fit = len(self.param_names)
 
         minimizer_kwargs = {
@@ -659,6 +714,7 @@ class Patient:
             result = differential_evolution(
                 self.objective_function,
                 bounds=bounds,
+                args=(verbose,),  
                 strategy='best1bin',
                 maxiter=iter,
                 popsize=100,
@@ -668,14 +724,15 @@ class Patient:
                 polish=False,
                 init='halton',
                 workers=1, 
-                vectorized=False,
-                updating='immediate' 
+                vectorized=vectorized,
+                updating='deferred' 
             )
         elif method == 'dual_annealing':
             print(f'{self.id} Dual Annealing with {iter} iterations.', flush=True)
             result = dual_annealing(
                 self.objective_function,
                 bounds=bounds,
+                args=(verbose,),
                 x0=initial_values,
                 no_local_search=False
             )
@@ -684,7 +741,7 @@ class Patient:
             result = direct(
                 self.objective_function,
                 bounds=bounds,
-                args=(), 
+                args=(verbose,), 
                 eps=1E-7, 
                 maxfun=None,  
                 maxiter=iter,  
@@ -700,6 +757,7 @@ class Patient:
             result = brute(
                 self.objective_function,
                 ranges=bounds,
+                args=(verbose,),
                 full_output=True,
                 finish=None,  
                 workers=1,
@@ -710,6 +768,7 @@ class Patient:
             result = shgo(
                 self.objective_function,
                 bounds=bounds,
+                args=(verbose,),
                 constraints=None,
                 n=100, 
                 iters=1,  
@@ -727,6 +786,7 @@ class Patient:
                 self.objective_function,
                 x0=initial_values, 
                 bounds=bounds,
+                args=(verbose,),
                 maxiter=iter,
                 initial_temp=1.0,
                 cooling_rate=0.95,
@@ -780,6 +840,7 @@ class Patient:
             print(f'{self.id} Basin Hopping with n = {iter}',flush=True)
             result = basinhopping(
                 self.objective_function,  
+                args=(verbose,),
                 x0=initial_values,
                 niter=iter,
                 T=0.01,
@@ -822,26 +883,49 @@ class Patient:
             result.x = best_sample
             result.fun = best_sse
 
+        print(result.x)
         if buff == True:
             # Local solver "buff" (polish, but that keyword is used in some global algos already)
-            fallback_minimizer_kwargs = {
-                'method': 'L-BFGS-B',
-                'bounds': bounds,
-                'options': {
-                        'xatol': 1e-6,
-                        'fatol': 1e-6,
-                        'disp': True,
-                        'maxiter': 1E4,
-                }}
             print(f'{self.id} polish', flush=True)
-            result = minimize(
+            buff_method = 'L-BFGS-B'
+
+            # Define all possible options
+            options = {
+                'disp': False,
+                'maxiter': 1E4,
+                'gtol': 1e-6,
+                'norm': None,
+                'return_all': False,
+                'initial_trust_radius': None,
+            }
+
+            try:
+                method_options = show_options('minimize', buff_method, disp=False)
+                valid_keys = set(method_options.keys()) if isinstance(method_options, dict) else set()
+            except Exception:
+                valid_keys = set()  
+
+            filtered_options = {k: v for k, v in options.items() if k in valid_keys}
+
+            buff_minimizer_kwargs = {
+                'method': buff_method,
+                'bounds': bounds,
+                'options': filtered_options
+            }
+
+            # Suppress OptimizeWarning
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", OptimizeWarning)
+
+                # Run minimization
+                result = minimize(
                 self.objective_function, 
                 x0=result.x if 'result' in locals() else initial_values,
-                **fallback_minimizer_kwargs
+                **buff_minimizer_kwargs
             )
-        else:
-            result = OptimizeResult()
-            result.x = result.x if 'result' in locals() else initial_values
+
+        #elif not hasattr(result, "x"):
+                #result.x = initial_values
 
         # Write results to database
         db_path = f'sql/{path}.db'
@@ -853,28 +937,32 @@ class Patient:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 E0 REAL, M0 REAL, ME REAL, T0 REAL, I10 REAL, beta REAL, k REAL,
                 p REAL, c REAL, delta REAL, xi REAL, a REAL,
-                d_E REAL, delta_E REAL, K_delta_E REAL, zeta REAL, eta REAL, K_I1 REAL, tau_memory REAL,
+                d_E REAL, delta_E REAL, K_delta_E REAL, zeta REAL, eta REAL, K_I1 REAL, tau_memory REAL, damp REAL,
                 V_sse REAL, CD8TE_sse REAL, CD8TM_sse REAL, sse REAL, PID REAL
             )
         ''')
         conn.commit()
         conn.close()
         self.write_results_to_db(path=db_path)
-
-        # Final update of parameters
+        
+        # Final update of parameters using the Parameter's inverse transformation.
+        new_x = []
         for i, name in enumerate(self.param_names):
-            if self.parameters._parameters[name].space == 'log10':
-                self.parameters._parameters[name].val = 10**result.x[i]
-            else:
-                self.parameters._parameters[name].val = result.x[i]
-            print(f'Parameter {name}: {self.parameters._parameters[name].val}')
-
-        # Solve and compare with the best-found parameters
-        self.solve()
+            param_obj = self.parameters._parameters[name]
+            new_val = param_obj._inverse_transform_space(result.x[i])
+            param_obj.val = new_val
+            new_x.append(new_val)
+            print(f'Parameter {name}: {new_val}')
+        
+        # Overwrite result.x so that it is now in normal space.
+        result.x = np.array(new_x)
+        
+        # Solve and compare with the best-found parameters.
+        self.sol = self.solve(verbose=verbose)
         self.results_in_memory = []
-
+        
         return (result, self)
-    
+
     def __repr__(self):
         return f"Patient({self.id}, sse={self.sse}, parameters={self.parameters})"
 
@@ -886,7 +974,7 @@ class Patients:
             self.color_dict = self.assign_black_colors(ids)
         else:
             raise ValueError("Invalid color mode. Choose 'unique' or 'black'.")
-        t_fill = np.linspace(t_span[0], t_span[-1], 250)
+        t_fill = np.linspace(t_span[0], t_span[-1], 200)
         t_int = np.arange(t_span[0], t_span[-1] + 1)
         self.t_span = np.unique(np.concatenate([t_span, t_fill, t_int]))
         self.df = df
@@ -915,21 +1003,12 @@ class Patients:
 
         self.parameters.patients = self.patients
 
-    def solve(self):
-        for patient in self.patients.values():
-            patient.solve()
-            
-    def compare(self, ids=None):
-        if ids is None:
-            ids = self.patients.keys()
-        for patient_id in ids:
-            self.patients[patient_id].compare()
-    
-    def optimize_parameters(self, opt_target, method, iter, path, verbose=False, local_iter=1000, local_method='L-BFGS-B'):
+    def optimize_parameters(self, opt_target, method, iter, path, verbose=False, local_iter=1000, local_method='L-BFGS-B', buff=True, vectorized=False):
         results = []
         for patient in self.patients.values():
             if patient.id == opt_target:
-                result = patient.optimize_parameters(method=method, iter=iter, verbose=verbose, path=path, local_iter=local_iter, local_method=local_method)
+                result = patient.optimize_parameters(
+                    method=method, iter=iter, verbose=verbose, path=path, local_iter=local_iter, local_method=local_method, buff=buff, vectorized=vectorized)
                 results.append(result)
         return results
 
