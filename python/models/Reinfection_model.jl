@@ -6,9 +6,9 @@ function ReinfectionModel!(du, u, p, t, state_history)
 
     # Unpack states (using @inbounds for efficiency)
     @inbounds begin
-        T, I1, I2, V, CD8_E, CD8_M = u[1:6]
+        T, I1, I2, V, CD8_E, CD8_M, CD8_MP = u[1:7]
     end
-    z = @inbounds u[7:end]
+    z = @inbounds u[8:end]
 
     # Unpack parameters (15 parameters expected)
     beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, K_I1, tau_memory, damp = p
@@ -17,7 +17,7 @@ function ReinfectionModel!(du, u, p, t, state_history)
     CD8_E_tau = interpolate_delay(state_history, 5, t - tau_memory)
 
     # Conditional dynamics based on damp and virus load
-    if t > damp && V < 35
+    if t > damp && V < 1
         du[1] = 0         # Target cells held constant
         du[2] = -k * I1   # Only decay of eclipse cells
     else
@@ -32,8 +32,8 @@ function ReinfectionModel!(du, u, p, t, state_history)
         du[5] = a * z[end] + (eta * CD8_M * I1) / (K_I1 + I1) - d_E * CD8_E
         du[6] = zeta * CD8_E_tau
         # Delayed compartments
-        du[7] = xi * I1 - a * z[1]
-        du[8:end] .= a .* (z[1:end-1] .- z[2:end])
+        du[8] = xi * I1 - a * z[1]
+        du[9:end] .= a .* (z[1:end-1] .- z[2:end])
     end
 end
 

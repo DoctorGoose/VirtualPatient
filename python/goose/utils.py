@@ -16,7 +16,7 @@ from julia.api import Julia
 julia = Julia(sysimage="../sysimage_env/sysimage.so")
 from julia import Main
 Main.include("../models/Primary_model.jl")
-Main.include("../models/Reinfection_model.jl") 
+Main.include("../models/Reinfection_model_partial.jl") 
 
 ### Generally useful (infrastructure) functions ###
 def sci_format(x, pos):
@@ -30,7 +30,7 @@ def format_fit_params(fit_parameters):
     else:
         fit_params_str = fit_parameters[0] if isinstance(fit_parameters, list) else fit_parameters
 
-    # lowercase Greek letter names to glyphs
+    # Dictionary mapping Greek letter names to glyphs
     greek_letters = {
         "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ",
         "epsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ",
@@ -40,14 +40,20 @@ def format_fit_params(fit_parameters):
         "phi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω"
     }
 
-    # Replace Greek letter names with glyphs
+    # For each Greek letter name, replace it if it’s not preceded/followed by [A-Za-z].
+    # This allows underscores or string boundaries on either side.
     for name, glyph in greek_letters.items():
-        fit_params_str = re.sub(rf"\b{name}\b", glyph, fit_params_str)
-    
-    # Remove underscores
+        fit_params_str = re.sub(
+            rf"(?<![A-Za-z]){name}(?![A-Za-z])",
+            glyph,
+            fit_params_str
+        )
+
+    # Remove underscores after replacing
     fit_params_str = fit_params_str.replace("_", "")
 
     return fit_params_str
+
 
 def read_excel(filename):
     """Reads an Excel file that may be locked and returns a DataFrame."""
@@ -330,7 +336,7 @@ def solve_with_julia(t_span, y0, params, param_keys, reinfection=False):
     
     # Call Julia model function.
     if reinfection:
-        result = Main.tmap_ReinfectionModel(t_span, y0.tolist(), params_julia)
+        result = Main.tmap_ReinfectionModel_partial(t_span, y0.tolist(), params_julia)
     else:
         result = Main.tmap_LCTModel(t_span, y0.tolist(), params_julia)
     
@@ -367,7 +373,7 @@ def JuliaSolve(task):
             y0_local = States(states).y0
             y0_local[0] = param_set.T0.val
             y0_local[1] = param_set.I10.val
-            y0_local[5] = param_set.ME.val
+            y0_local[6] = param_set.MP0.val
             sol = solve_with_julia(t_span, y0_local, params, param_keys=param_order, reinfection=reinfection)
             sol.y[4] += param_set.E0.val
             sol.y[5] += param_set.M0.val
@@ -385,13 +391,13 @@ def JuliaSolve(task):
             y0_local = States(states).y0.copy()
             y0_local[0] = param_set.T0.val
             y0_local[1] = param_set.I10.val
-            y0_local[5] = param_set.ME.val
+            y0_local[6] = param_set.MP0.val
             sols = solve_with_julia(t_span, y0_local, batch, param_keys=param_order, reinfection=reinfection)
             def get_sample(val, i):
                 return val[i] if isinstance(val, np.ndarray) and val.ndim > 0 else val
             for i, sol in enumerate(sols):
                 sol.y[4] += get_sample(getattr(param_set, "E0").val, i)
-                sol.y[5] += get_sample(getattr(param_set, "M0").val, i)
+                sol.y[6] += get_sample(getattr(param_set, "M0").val, i)
             return sols
     return inner_solve(*task)
 
@@ -554,7 +560,7 @@ class Patient:
                     for d_val, m_val, t in zip(data_values, interpolated_model_values, time_points):
                         log_diff = (np.log10(max(d_val, 1.0)) - np.log10(max(m_val, 1.0))) ** 2
                         if state_label in ['CD8TE', 'CD8TM'] and t == 0:
-                            log_diff *= 10  # Weight for Time = 0
+                            log_diff *= 10  # Weight for Time = 0, for Population fitting
                         state_sse += log_diff
                     sse_array[idx] = state_sse
                     if state.get('sse', True):
@@ -676,7 +682,7 @@ class Patient:
 
         cursor.executemany('''
             INSERT INTO evaluations (
-                E0, M0, ME, T0, I10, beta, k, p, c, delta, xi, a, d_E, delta_E, K_delta_E,
+                E0, M0, MP0, T0, I10, beta, k, p, c, delta, xi, a, d_E, delta_E, K_delta_E,
                 zeta, eta, K_I1, tau_memory, damp, V_sse, CD8TE_sse, CD8TM_sse, sse, PID
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', data_to_insert)
@@ -901,7 +907,7 @@ class Patient:
             options = {
                 'disp': False,
                 'maxiter': 1E4,
-                'gtol': 1e-6,
+                'gtol': 1e-9,
                 'norm': None,
                 'return_all': False,
                 'initial_trust_radius': None,
@@ -943,7 +949,7 @@ class Patient:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS evaluations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                E0 REAL, M0 REAL, ME REAL, T0 REAL, I10 REAL, beta REAL, k REAL,
+                E0 REAL, M0 REAL, MP0 REAL, T0 REAL, I10 REAL, beta REAL, k REAL,
                 p REAL, c REAL, delta REAL, xi REAL, a REAL,
                 d_E REAL, delta_E REAL, K_delta_E REAL, zeta REAL, eta REAL, K_I1 REAL, tau_memory REAL, damp REAL,
                 V_sse REAL, CD8TE_sse REAL, CD8TM_sse REAL, sse REAL, PID REAL
