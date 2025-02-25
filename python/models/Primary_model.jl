@@ -10,7 +10,7 @@ function LCTModel!(du, u, p, t, state_history)
     end
     z = @inbounds u[7:end]
     
-    # Unpack parameters (14 parameters expected)
+    # Unpack parameters 
     beta, k, p_param, c, delta, xi, a, d_E, delta_E, K_delta_E, zeta, eta, K_I1, tau_memory, damp = p
 
     # Retrieve delayed state (CD8_E is u[5]) at time t - tau_memory.
