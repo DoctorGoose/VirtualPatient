@@ -16,7 +16,7 @@ from julia.api import Julia
 julia = Julia(sysimage="../sysimage_env/sysimage.so")
 from julia import Main
 Main.include("../models/Primary_model.jl")
-Main.include("../models/Reinfection_model_partial.jl") 
+Main.include("../models/Reinfection_model.jl") 
 
 ### Generally useful (infrastructure) functions ###
 def sci_format(x, pos):
@@ -336,7 +336,7 @@ def solve_with_julia(t_span, y0, params, param_keys, reinfection=False):
     
     # Call Julia model function.
     if reinfection:
-        result = Main.tmap_ReinfectionModel_partial(t_span, y0.tolist(), params_julia)
+        result = Main.tmap_ReinfectionModel(t_span, y0.tolist(), params_julia)
     else:
         result = Main.tmap_LCTModel(t_span, y0.tolist(), params_julia)
     
@@ -403,6 +403,10 @@ def JuliaSolve(task):
 
 # Curent development area 
 
+class NoOpMinimizer:
+    def __call__(self, x):
+        return x
+    
 class Parameter:
     def __init__(self, name, val=None, bounds=None, method='fixed', space='log10'):
         self.name = name
@@ -612,7 +616,7 @@ class Patient:
                         # Calculate SSE for this state
                         state_sse = 0
                         for data_val, model_val, time in zip(data_values, interpolated_model_values, time_points):
-                            log_diff = (np.log10(max(data_val, 1.0)) - np.log10(max(model_val, 1.0))) ** 2
+                            log_diff = (np.log10(max(data_val, 1.0)) - np.log10(max(model_val, 1.0))) ** 2 
                             if state_label in ['CD8TE', 'CD8TM'] and time == 0:
                                     log_diff *= 10  # Apply weight of 10 for Time = 0 and CD8TE, CD8TM 
                             state_sse += log_diff
